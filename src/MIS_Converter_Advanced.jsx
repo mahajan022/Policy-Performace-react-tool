@@ -9,7 +9,7 @@ import {
 import indiaMap from '@svg-maps/india';
 import {
   UploadCloud, Check, Download, BarChart3, X, ZoomIn, Copy, ArrowLeft,
-  ArrowRight, FileSpreadsheet, AlertTriangle, Info, RotateCcw, MapPin
+  ArrowRight, FileSpreadsheet, AlertTriangle, Info, RotateCcw
 } from 'lucide-react';
 
 // ============================================================================
