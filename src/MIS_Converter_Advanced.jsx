@@ -1583,7 +1583,7 @@ const MISConverterTool = () => {
           <div style={styles.brandRow}>
           <img src="/logo.jpeg" alt="Healthysure" style={styles.logo} />
           <div>
-            <h1 style={styles.title}>MIS Converter</h1>
+            <h1 style={styles.title}>Performace Analytics Tool</h1>
             <p style={styles.subtitle}>Insurer file standardization &amp; claims insights</p>
           </div>
         </div>
