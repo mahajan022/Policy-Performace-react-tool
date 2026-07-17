@@ -632,6 +632,10 @@ const getDashboardAnalytics = (rows) => {
   const diseaseCounts = {};
   const ageCounts = {};
   const stateCounts = {};
+  // Standardized Status values (see statusMapping): In Process, Under Query,
+  // Approved, Rejected, Settled, Withdrawn. We only surface the three the
+  // team actively tracks as top-strip widgets.
+  const statusCounts = { 'In Process': 0, 'Under Query': 0, 'Approved': 0 };
   let unmatchedStateCount = 0;
   let totalClaimsWithFDR = 0;
   let totalClaimsWithLDR = 0;
@@ -673,6 +677,12 @@ const getDashboardAnalytics = (rows) => {
     // 7. Disease-wise split
     const disease = String(row['Disease Category'] || '').trim() || 'Unspecified';
     diseaseCounts[disease] = (diseaseCounts[disease] || 0) + 1;
+
+    // 8. Status split (In Process / Under Query / Approved widgets)
+    const statusVal = String(row['Status'] || '').trim();
+    if (Object.prototype.hasOwnProperty.call(statusCounts, statusVal)) {
+      statusCounts[statusVal] += 1;
+    }
   });
 
   const toChartData = (obj, limit) => {
@@ -680,8 +690,21 @@ const getDashboardAnalytics = (rows) => {
     return (limit ? sorted.slice(0, limit) : sorted).map(([name, value]) => ({ name, value }));
   };
 
+  // Cashless vs Reimbursement RATIO (percentage split, "Other"/blank claim
+  // types excluded so the two bars always add up to 100%).
+  const ratioBase = claimTypeCounts.Cashless + claimTypeCounts.Reimbursement;
+  const cashlessPct = ratioBase ? Math.round((claimTypeCounts.Cashless / ratioBase) * 100) : 0;
+  const reimbursementPct = ratioBase ? 100 - cashlessPct : 0;
+
   return {
     claimTypeData: toChartData(claimTypeCounts).filter(d => d.value > 0),
+    cashlessReimbRatio: [{
+      name: 'Ratio',
+      Cashless: cashlessPct,
+      Reimbursement: reimbursementPct,
+      CashlessCount: claimTypeCounts.Cashless,
+      ReimbursementCount: claimTypeCounts.Reimbursement
+    }],
     documentReceiptData: [
       { name: 'FDR Received', value: totalClaimsWithFDR },
       { name: 'LDR Received', value: totalClaimsWithLDR },
@@ -694,7 +717,8 @@ const getDashboardAnalytics = (rows) => {
     stateCounts,
     unmatchedStateCount,
     rejectionReasonData: toChartData(rejectionReasonCounts, 8),
-    diseaseData: toChartData(diseaseCounts, 8)
+    diseaseData: toChartData(diseaseCounts, 8),
+    statusCounts
   };
 };
 
@@ -1978,8 +2002,9 @@ const MISConverterTool = () => {
               <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Cashless')?.value || 0}</div><div style={styles.statLabel}>Cashless</div></div>
               <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Reimbursement')?.value || 0}</div><div style={styles.statLabel}>Reimbursement</div></div>
               <div style={styles.statBox}><div style={{ ...styles.statValue, color: COLORS.danger }}>{a.rejectionReasonData.reduce((s, d) => s + d.value, 0)}</div><div style={styles.statLabel}>Rejected</div></div>
-              <div style={styles.statBox}><div style={styles.statValue}>{Object.keys(a.stateCounts).length}</div><div style={styles.statLabel}>States matched</div></div>
-              <div style={styles.statBox}><div style={styles.statValue}>{a.diseaseData.length}</div><div style={styles.statLabel}>Disease categories</div></div>
+              <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['In Process']}</div><div style={styles.statLabel}>In process</div></div>
+              <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['Under Query']}</div><div style={styles.statLabel}>Under query</div></div>
+              <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['Approved']}</div><div style={styles.statLabel}>Approved</div></div>
             </div>
 
             <div style={styles.dashboardGrid}>
@@ -1989,6 +2014,37 @@ const MISConverterTool = () => {
                 title="Cashless vs reimbursement"
                 renderChart={(h) => (
                   <PopOutPieChart data={a.claimTypeData} height={h} />
+                )}
+              />
+
+              {/* 1b. Cashless vs Reimbursement — ratio (100% stacked bar) */}
+              <ChartCard
+                title="Cashless vs reimbursement ratio"
+                renderChart={(h) => (
+                  <ResponsiveContainer width="100%" height={h}>
+                    <BarChart
+                      data={a.cashlessReimbRatio}
+                      layout="vertical"
+                      margin={{ top: 20, right: 20, bottom: 5, left: 20 }}
+                    >
+                      <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                      <YAxis type="category" dataKey="name" hide />
+                      <Tooltip
+                        formatter={(value, key, entry) => {
+                          const count = key === 'Cashless' ? entry.payload.CashlessCount : entry.payload.ReimbursementCount;
+                          return [`${value}% (${count} claims)`, key];
+                        }}
+                        contentStyle={{ background: COLORS.surface, border: `1px solid ${COLORS.borderStrong}`, borderRadius: 8, color: COLORS.textPrimary }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12, color: COLORS.textSecondary }} />
+                      <Bar dataKey="Cashless" stackId="ratio" fill={CHART_COLORS[0]} radius={[6, 0, 0, 6]} barSize={46}>
+                        <LabelList dataKey="Cashless" position="insideLeft" formatter={(v) => (v ? `${v}%` : '')} style={{ fontSize: 13, fontWeight: 700, fill: '#ffffff' }} />
+                      </Bar>
+                      <Bar dataKey="Reimbursement" stackId="ratio" fill={CHART_COLORS[2]} radius={[0, 6, 6, 0]} barSize={46}>
+                        <LabelList dataKey="Reimbursement" position="insideRight" formatter={(v) => (v ? `${v}%` : '')} style={{ fontSize: 13, fontWeight: 700, fill: '#ffffff' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 )}
               />
 
@@ -2396,7 +2452,7 @@ const styles = {
   policyTotalLabel: { fontSize: '11px', color: COLORS.accentDeep, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' },
   policyTotalValue: { fontSize: '26px', fontWeight: 800, color: COLORS.accentDeep, fontVariantNumeric: 'tabular-nums' },
 
-  statsStrip: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '22px' },
+  statsStrip: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px', marginBottom: '22px' },
   statBox: { backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '14px 10px', textAlign: 'center' },
   statValue: { fontSize: '21px', fontWeight: 800, color: COLORS.textPrimary, fontVariantNumeric: 'tabular-nums' },
   statLabel: { fontSize: '10px', color: COLORS.textMuted, fontWeight: 700, textTransform: 'uppercase', marginTop: '4px', letterSpacing: '0.3px' },
