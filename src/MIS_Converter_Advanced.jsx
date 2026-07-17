@@ -1998,23 +1998,30 @@ const MISConverterTool = () => {
             </div>
 
             {/* Row 1: claim-type breakdown — Cashless + Reimbursement (+ Other, not shown)
-                adds up to Total claims. */}
-            <div style={styles.statGroupLabel}>By claim type</div>
-            <div style={styles.statsStrip}>
-              <div style={styles.statBox}><div style={styles.statValue}>{insightsRows.length}</div><div style={styles.statLabel}>Total claims</div></div>
-              <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Cashless')?.value || 0}</div><div style={styles.statLabel}>Cashless</div></div>
-              <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Reimbursement')?.value || 0}</div><div style={styles.statLabel}>Reimbursement</div></div>
+                adds up to Total claims. Whole group now uses the same mint/dark
+                theme as the Total premium / Total lives boxes above, with the
+                "By claim type" heading placed inside the box. */}
+            <div style={styles.statGroupBox}>
+              <div style={styles.statGroupTitle}>By claim type</div>
+              <div style={styles.statsStrip}>
+                <div style={styles.statBox}><div style={styles.statValue}>{insightsRows.length}</div><div style={styles.statLabel}>Total claims</div></div>
+                <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Cashless')?.value || 0}</div><div style={styles.statLabel}>Cashless</div></div>
+                <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Reimbursement')?.value || 0}</div><div style={styles.statLabel}>Reimbursement</div></div>
+              </div>
             </div>
 
             {/* Row 2: status breakdown — a separate dimension of the SAME claims
                 (e.g. a rejected claim is also either Cashless or Reimbursement
-                above), so this row is not meant to add up with Row 1. */}
-            <div style={{ ...styles.statGroupLabel, marginTop: '14px' }}>By status</div>
-            <div style={styles.statsStrip}>
-              <div style={styles.statBox}><div style={{ ...styles.statValue, color: COLORS.danger }}>{a.rejectionReasonData.reduce((s, d) => s + d.value, 0)}</div><div style={styles.statLabel}>Rejected</div></div>
-              <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['In Process']}</div><div style={styles.statLabel}>In process</div></div>
-              <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['Under Query']}</div><div style={styles.statLabel}>Under query</div></div>
-              <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['Approved']}</div><div style={styles.statLabel}>Approved</div></div>
+                above), so this row is not meant to add up with Row 1. Same
+                mint/dark theme, heading inside the box. */}
+            <div style={styles.statGroupBox}>
+              <div style={styles.statGroupTitle}>By status</div>
+              <div style={styles.statsStrip}>
+                <div style={styles.statBox}><div style={{ ...styles.statValue, color: COLORS.danger }}>{a.rejectionReasonData.reduce((s, d) => s + d.value, 0)}</div><div style={{ ...styles.statLabel, color: COLORS.danger }}>Rejected</div></div>
+                <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['In Process']}</div><div style={styles.statLabel}>In process</div></div>
+                <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['Under Query']}</div><div style={styles.statLabel}>Under query</div></div>
+                <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['Approved']}</div><div style={styles.statLabel}>Approved</div></div>
+              </div>
             </div>
 
             <div style={styles.dashboardGrid}>
@@ -2462,10 +2469,35 @@ const styles = {
   policyTotalLabel: { fontSize: '11px', color: COLORS.accentDeep, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' },
   policyTotalValue: { fontSize: '26px', fontWeight: 800, color: COLORS.accentDeep, fontVariantNumeric: 'tabular-nums' },
 
-  statsStrip: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px', marginBottom: '22px' },
-  statBox: { backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '14px 10px', textAlign: 'center' },
-  statValue: { fontSize: '21px', fontWeight: 800, color: COLORS.textPrimary, fontVariantNumeric: 'tabular-nums' },
-  statLabel: { fontSize: '10px', color: COLORS.textMuted, fontWeight: 700, textTransform: 'uppercase', marginTop: '4px', letterSpacing: '0.3px' },
+  // Wraps a whole stat row (heading + strip) in the same mint/dark theme as
+  // the Total premium / Total lives boxes above, so "By claim type" and
+  // "By status" visually match them, with the heading placed inside the box.
+  statGroupBox: {
+    backgroundColor: COLORS.mint,
+    border: `1px solid ${COLORS.borderStrong}`,
+    borderRadius: '10px',
+    padding: '16px 18px 18px',
+    marginBottom: '16px'
+  },
+  statGroupTitle: {
+    fontSize: '11px',
+    color: COLORS.accentDeep,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: '10px'
+  },
+
+  statsStrip: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' },
+  statBox: {
+    backgroundColor: COLORS.mint,
+    border: `1px solid ${COLORS.borderStrong}`,
+    borderRadius: '8px',
+    padding: '14px 10px',
+    textAlign: 'center'
+  },
+  statValue: { fontSize: '21px', fontWeight: 800, color: COLORS.accentDeep, fontVariantNumeric: 'tabular-nums' },
+  statLabel: { fontSize: '10px', color: COLORS.accentDeep, fontWeight: 700, textTransform: 'uppercase', marginTop: '4px', letterSpacing: '0.3px', opacity: 0.75 },
 
   chartCard: { backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '10px', padding: '18px' },
   chartCardTitle: { fontSize: '12.5px', fontWeight: 700, color: COLORS.textPrimary, margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.4px' },
