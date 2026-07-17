@@ -1997,10 +1997,20 @@ const MISConverterTool = () => {
               </div>
             </div>
 
+            {/* Row 1: claim-type breakdown — Cashless + Reimbursement (+ Other, not shown)
+                adds up to Total claims. */}
+            <div style={styles.statGroupLabel}>By claim type</div>
             <div style={styles.statsStrip}>
               <div style={styles.statBox}><div style={styles.statValue}>{insightsRows.length}</div><div style={styles.statLabel}>Total claims</div></div>
               <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Cashless')?.value || 0}</div><div style={styles.statLabel}>Cashless</div></div>
               <div style={styles.statBox}><div style={styles.statValue}>{a.claimTypeData.find(d => d.name === 'Reimbursement')?.value || 0}</div><div style={styles.statLabel}>Reimbursement</div></div>
+            </div>
+
+            {/* Row 2: status breakdown — a separate dimension of the SAME claims
+                (e.g. a rejected claim is also either Cashless or Reimbursement
+                above), so this row is not meant to add up with Row 1. */}
+            <div style={{ ...styles.statGroupLabel, marginTop: '14px' }}>By status</div>
+            <div style={styles.statsStrip}>
               <div style={styles.statBox}><div style={{ ...styles.statValue, color: COLORS.danger }}>{a.rejectionReasonData.reduce((s, d) => s + d.value, 0)}</div><div style={styles.statLabel}>Rejected</div></div>
               <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['In Process']}</div><div style={styles.statLabel}>In process</div></div>
               <div style={styles.statBox}><div style={styles.statValue}>{a.statusCounts['Under Query']}</div><div style={styles.statLabel}>Under query</div></div>
