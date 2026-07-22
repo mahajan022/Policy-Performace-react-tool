@@ -280,7 +280,7 @@ const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height
                 y={c.labelY}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize={15}
+                fontSize={18}
                 fontWeight={700}
                 fill={COLORS.textPrimary}
                 style={{ pointerEvents: 'none', userSelect: 'none' }}
@@ -350,7 +350,7 @@ const renderActivePieSlice = (props) => {
 
 // Pie chart with hover pop-out behavior. Wrapped in its own component (rather
 // than an inline PieChart) so it can hold its own activeIndex state via hooks.
-const PopOutPieChart = ({ data, height, hidePercent = false }) => {
+const PopOutPieChart = ({ data, height, isRatio = false }) => {
   const [activeIndex, setActiveIndex] = useState(-1);
   const total = data.reduce((sum, d) => sum + (d.value || 0), 0);
   return (
@@ -364,9 +364,12 @@ const PopOutPieChart = ({ data, height, hidePercent = false }) => {
           cy="50%"
           outerRadius={Math.min(height, 260) * 0.35}
           label={({ name, value }) => {
-            if (hidePercent) return `${name}: ${value}`;
-            const pct = total ? Math.round((value / total) * 100) : 0;
-            return `${name}: ${value} (${pct}%)`;
+            if (isRatio) {
+              // For ratio chart, show as percentage (value is already a %)
+              return `${name}: ${value}%`;
+            }
+            // For value charts, show just the count without percentage
+            return `${name}: ${value}`;
           }}
           activeIndex={activeIndex}
           activeShape={renderActivePieSlice}
@@ -2205,7 +2208,7 @@ const MISConverterTool = () => {
                 <ChartCard
                   title="Cashless vs reimbursement ratio"
                   renderChart={(h) => (
-                    <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} hidePercent />
+                    <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} isRatio />
                   )}
                 />
 
