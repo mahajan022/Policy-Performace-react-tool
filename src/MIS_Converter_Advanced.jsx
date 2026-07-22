@@ -2133,11 +2133,11 @@ const MISConverterTool = () => {
 
               {/* Company / policy year header strip */}
               <div style={styles.policyMetaStrip}>
-                <div>
+                <div style={styles.policyMetaBox}>
                   <div style={styles.policyMetaLabel}>Company name</div>
                   <div style={styles.policyMetaValue}>{companyName || '—'}</div>
                 </div>
-                <div>
+                <div style={styles.policyMetaBox}>
                   <div style={styles.policyMetaLabel}>Policy year</div>
                   <div style={styles.policyMetaValue}>{policyYear || '—'}</div>
                 </div>
