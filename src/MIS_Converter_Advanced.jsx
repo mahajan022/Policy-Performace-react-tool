@@ -2622,9 +2622,33 @@ const styles = {
     fontFamily: 'inherit', boxSizing: 'border-box'
   },
 
-  policyMetaStrip: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' },
-  policyMetaLabel: { fontSize: '11px', color: COLORS.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' },
-  policyMetaValue: { fontSize: '16px', fontWeight: 700, color: COLORS.textPrimary },
+policyMetaStrip: {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: '14px',
+  marginBottom: '20px'
+},
+policyMetaBox: {
+  backgroundColor: COLORS.accentDeep,
+  borderRadius: '12px',
+  padding: '18px 22px',
+  boxShadow: '0 10px 26px rgba(9,82,68,0.22)'
+},
+policyMetaLabel: {
+  fontSize: '11px',
+  color: 'rgba(255,255,255,0.75)',
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  letterSpacing: '0.6px',
+  marginBottom: '6px'
+},
+policyMetaValue: {
+  fontSize: '26px',
+  fontWeight: 900,
+  color: '#ffffff',
+  letterSpacing: '-0.3px',
+  lineHeight: 1.15
+},
 
   policyTotalsStrip: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px', marginBottom: '16px' },
   policyTotalBox: {
