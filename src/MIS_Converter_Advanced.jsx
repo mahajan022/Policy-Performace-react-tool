@@ -352,7 +352,6 @@ const renderActivePieSlice = (props) => {
 // than an inline PieChart) so it can hold its own activeIndex state via hooks.
 const PopOutPieChart = ({ data, height, isRatio = false }) => {
   const [activeIndex, setActiveIndex] = useState(-1);
-  const total = data.reduce((sum, d) => sum + (d.value || 0), 0);
   return (
     <ResponsiveContainer width="100%" height={height}>
       <PieChart>
