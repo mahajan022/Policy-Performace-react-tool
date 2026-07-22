@@ -575,11 +575,11 @@ const bucketAge = (value) => {
 // insights can be built — so a numbered stepper encodes real information
 // (what's done, what's next), not decoration.
 const STEP_META = {
-  select:            { num: 1, label: 'Upload File' },
-  convert:            { num: 2, label: 'Convert' },
-  preview:            { num: 2, label: 'Convert' },
-  'upload-insights':  { num: 3, label: 'Add Details' },
-  dashboard:          { num: 4, label: 'Insights' }
+  select: { num: 1, label: 'Upload File' },
+  convert: { num: 2, label: 'Convert' },
+  preview: { num: 2, label: 'Convert' },
+  'upload-insights': { num: 3, label: 'Add Details' },
+  dashboard: { num: 4, label: 'Insights' }
 };
 const STEP_ORDER = [
   { num: 1, label: 'Upload File' },
@@ -1657,12 +1657,12 @@ const MISConverterTool = () => {
       <header style={styles.topbar}>
         <div className="mis-shell-inner" style={styles.topbarInner}>
           <div style={styles.brandRow}>
-          <img src="/logo.jpeg" alt="Healthysure" style={styles.logo} />
-          <div>
-            <h1 style={styles.title}>Performace Analytics Tool</h1>
-            <p style={styles.subtitle}>Insurer file standardization &amp; claims insights</p>
+            <img src="/logo.jpeg" alt="Healthysure" style={styles.logo} />
+            <div>
+              <h1 style={styles.title}>Performace Analytics Tool</h1>
+              <p style={styles.subtitle}>Insurer file standardization &amp; claims insights</p>
+            </div>
           </div>
-        </div>
           <div style={styles.toolBadge}>Internal tool</div>
         </div>
       </header>
@@ -1675,556 +1675,621 @@ const MISConverterTool = () => {
 
       <main className="mis-shell-main" style={styles.mainContent}>
 
-      {error && (
-        <div style={styles.errorBox}>
-          <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {step === 'select' && (
-        <div style={styles.card}>
-          <div style={styles.section}>
-            <div style={styles.sectionEyebrow}>Step 1 of 4</div>
-            <h2 style={styles.sectionTitle}>Upload the insurer's MIS file</h2>
-            <p style={styles.description}>Upload the raw Excel file exactly as received from the insurer. We'll try to detect which insurer it's from automatically from the column headers.</p>
-            <div
-              className="mis-upload"
-              style={{
-                ...styles.uploadArea,
-                ...(uploadedFile ? styles.uploadAreaFilled : {})
-              }}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleFileUpload}
-                style={{ display: 'none' }}
-              />
-              {uploadedFile ? (
-                <div style={styles.uploadedInfo}>
-                  <div style={styles.uploadedIconWrap}><FileSpreadsheet size={22} color={COLORS.accent} /></div>
-                  <div style={styles.uploadedText}>
-                    <strong style={{ color: COLORS.textPrimary }}>{uploadedFile.name}</strong>
-                    <div style={styles.uploadedSize}>{(uploadedFile.size / 1024).toFixed(2)} KB</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fileInputRef.current?.click();
-                    }}
-                    className="mis-btn mis-btn-outline"
-                    style={styles.changeFileBtn}
-                  >
-                    Change file
-                  </button>
-                </div>
-              ) : (
-                <div style={styles.uploadPlaceholder}>
-                  <UploadCloud size={30} color={COLORS.textMuted} />
-                  <div style={styles.uploadText}>Click to upload, or drag and drop</div>
-                  <div style={styles.uploadHint}>Excel files · .xlsx or .xls</div>
-                </div>
-              )}
-            </div>
+        {error && (
+          <div style={styles.errorBox}>
+            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+            <span>{error}</span>
           </div>
+        )}
 
-          <div style={styles.divider} />
-
-          <div style={styles.section}>
-            <div style={styles.sectionEyebrow}>Step 2 of 4</div>
-            <h2 style={styles.sectionTitle}>Confirm the insurer</h2>
-            {detecting ? (
-              <p style={styles.description}>Detecting insurer from file headers…</p>
-            ) : autoDetected ? (
-              <p style={styles.noteSuccess}>
-                <Check size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                <span>
-                  Auto-detected as <strong>{selectedInsurer}</strong> — change it below if that's wrong.
-                  {detectedSheetName && <> This file has multiple sheets; the <strong>"{detectedSheetName}"</strong> sheet was used since its columns matched.</>}
-                </span>
-              </p>
-            ) : (
-              <p style={styles.description}>
-                {uploadedFile ? "Couldn't auto-detect the insurer from this file — please select it manually." : "Choose which insurer's MIS format this file is in."}
-              </p>
-            )}
-            <select value={selectedInsurer} onChange={handleInsurerSelect} className="mis-field" style={styles.select}>
-              <option value="">— Choose insurer —</option>
-              {insurersList.map(insurer => (
-                <option key={insurer} value={insurer}>{insurer}</option>
-              ))}
-            </select>
-            {selectedInsurer && (!columnMapping[selectedInsurer] || Object.keys(columnMapping[selectedInsurer]).length === 0) && (
-              <p style={styles.noteWarning}>
-                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                <span>No column mapping found yet for {selectedInsurer}. Conversion will run, but most columns will come out blank until this insurer's mapping is added.</span>
-              </p>
-            )}
-          </div>
-
-          <button
-            onClick={() => setStep('convert')}
-            disabled={!selectedInsurer || !uploadedFile}
-            className="mis-btn mis-btn-primary"
-            style={{
-              ...styles.button,
-              ...styles.buttonPrimary,
-              opacity: (!selectedInsurer || !uploadedFile) ? 0.4 : 1,
-              cursor: (!selectedInsurer || !uploadedFile) ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Continue <ArrowRight size={15} />
-          </button>
-        </div>
-      )}
-
-      {step === 'convert' && (
-        <div style={styles.card}>
-          <div style={styles.section}>
-            <div style={styles.sectionEyebrow}>Step 2 of 4</div>
-            <h2 style={styles.sectionTitle}>Ready to convert</h2>
-            <p style={styles.description}>Review the details below, then convert this file into Healthysure's standard format.</p>
-            <div style={styles.summaryBox}>
-              <div style={styles.summaryRow}>
-                <span style={styles.summaryLabel}>Insurer</span>
-                <span style={styles.summaryValue}>{selectedInsurer}</span>
-              </div>
-              <div style={styles.summaryRow}>
-                <span style={styles.summaryLabel}>File</span>
-                <span style={styles.summaryValue}>{uploadedFile?.name}</span>
-              </div>
-              <div style={{ ...styles.summaryRow, borderBottom: 'none' }}>
-                <span style={styles.summaryLabel}>Size</span>
-                <span style={styles.summaryValue}>{uploadedFile ? (uploadedFile.size / 1024).toFixed(2) : 0} KB</span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={handleConvert}
-            disabled={loading}
-            className="mis-btn mis-btn-primary"
-            style={{ ...styles.button, ...styles.buttonPrimary, opacity: loading ? 0.6 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
-          >
-            {loading ? 'Converting…' : <>Convert to Healthysure format</>}
-          </button>
-
-          {loading && (
-            <div style={styles.progressContainer}>
-              <div style={styles.progressBar}>
-                <div style={{ ...styles.progressFill, width: `${progress}%` }}></div>
-              </div>
-              <div style={styles.progressText}>{progress}% complete</div>
-            </div>
-          )}
-
-          <button onClick={() => setStep('select')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
-            <ArrowLeft size={15} /> Back
-          </button>
-        </div>
-      )}
-
-      {step === 'preview' && convertedRows && (
-        <div style={styles.card}>
-          <div style={styles.successBox}>
-            <div style={styles.successIconWrap}><Check size={22} color="#ffffff" strokeWidth={3} /></div>
-            <div>
-              <h2 style={styles.successTitle}>Conversion successful</h2>
-              <p style={styles.successText}>
-                Converted <strong style={{ color: COLORS.textPrimary }}>{convertedRows.length} rows</strong> from {selectedInsurer} into Healthysure format
-                {matchStats && <> · {matchStats.filled} of {matchStats.total} columns matched</>}
-              </p>
-            </div>
-          </div>
-
-          {matchStats && matchStats.filled < matchStats.total * 0.3 && (
-            <p style={styles.noteWarning}>
-              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-              <span>
-                Only {matchStats.filled} of {matchStats.total} columns matched — this usually means the
-                wrong insurer was selected for this file (each insurer has different column names in the
-                mapping sheet). Double-check that <strong>{selectedInsurer}</strong> is really the insurer
-                this file came from, then try again.
-              </span>
-            </p>
-          )}
-
-          <div style={styles.section}>
-            <div style={styles.sectionEyebrow}>Preview</div>
-            <h2 style={styles.sectionTitle}>First 15 rows</h2>
-            <div style={styles.previewScroll}>
-              <table style={styles.previewTable}>
-                <thead>
-                  <tr>
-                    {outputColumns.map(col => (
-                      <th key={col} style={styles.previewHeaderCell}>{col}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {convertedRows.slice(0, 15).map((row, i) => (
-                    <tr key={i} style={i % 2 === 0 ? styles.previewRowEven : styles.previewRowOdd}>
-                      {outputColumns.map(col => (
-                        <td key={col} style={styles.previewCell}>{row[col]}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {convertedRows.length > 15 && (
-              <p style={styles.previewNote}>+ {convertedRows.length - 15} more rows in the downloaded file</p>
-            )}
-          </div>
-
-          <div style={styles.buttonGroup}>
-            <button onClick={() => setStep('convert')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
-              <ArrowLeft size={15} /> Previous
-            </button>
-            <button onClick={handleDownload} className="mis-btn mis-btn-primary" style={{ ...styles.button, ...styles.buttonPrimary }}>
-              <Download size={15} /> Download Excel file
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 'upload-insights' && (
-        <div style={styles.card}>
-          <div style={styles.section}>
-            <div style={styles.sectionEyebrow}>Step 3 of 4</div>
-            <h2 style={styles.sectionTitle}>Upload the final file for insights</h2>
-            <p style={styles.noteSuccess}>
-              <Check size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-              <span>Your file has been downloaded.</span>
-            </p>
-            <p style={styles.description}>
-              If your team made any edits to the downloaded file, make those changes and upload the
-              final version here. The dashboard is built from whatever file you upload —
-              not from the original conversion.
-            </p>
-            {insightsError && (
-              <div style={styles.errorBox}>
-                <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-                <span>{insightsError}</span>
-              </div>
-            )}
-            <div
-              className="mis-upload"
-              style={{
-                ...styles.uploadArea,
-                ...(insightsFile ? styles.uploadAreaFilled : {})
-              }}
-              onClick={() => insightsFileInputRef.current?.click()}
-            >
-              <input
-                ref={insightsFileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleInsightsFileUpload}
-                style={{ display: 'none' }}
-              />
-              {insightsFile ? (
-                <div style={styles.uploadedInfo}>
-                  <div style={styles.uploadedIconWrap}><FileSpreadsheet size={22} color={COLORS.accent} /></div>
-                  <div style={styles.uploadedText}>
-                    <strong style={{ color: COLORS.textPrimary }}>{insightsFile.name}</strong>
-                    <div style={styles.uploadedSize}>{(insightsFile.size / 1024).toFixed(2)} KB</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      insightsFileInputRef.current?.click();
-                    }}
-                    className="mis-btn mis-btn-outline"
-                    style={styles.changeFileBtn}
-                  >
-                    Change file
-                  </button>
-                </div>
-              ) : (
-                <div style={styles.uploadPlaceholder}>
-                  <UploadCloud size={30} color={COLORS.textMuted} />
-                  <div style={styles.uploadText}>
-                    {insightsLoading ? 'Reading file…' : 'Click to upload the final Excel file'}
-                  </div>
-                  <div style={styles.uploadHint}>Excel files · .xlsx or .xls</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {insightsRows && (
-            <>
-              <div style={styles.divider} />
-              <div style={styles.section}>
-                <div style={styles.sectionEyebrow}>Step 3 of 4</div>
-                <h2 style={styles.sectionTitle}>Policy details</h2>
-                <p style={styles.description}>
-                  Enter the policy details below — these are shown as widgets at the top of the
-                  insights dashboard, alongside the charts.
-                </p>
-                {insightsFieldsError && (
-                  <div style={styles.errorBox}>
-                    <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-                    <span>{insightsFieldsError}</span>
-                  </div>
-                )}
-                <div style={styles.fieldsRowWide}>
-                  <div style={styles.fieldGroup}>
-                    <label style={styles.fieldLabel}>Company name</label>
-                    <input
-                      type="text"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      placeholder="e.g. Acme Pvt Ltd"
-                      className="mis-field"
-                      style={styles.fieldInput}
-                    />
-                  </div>
-                  <div style={styles.fieldGroup}>
-                    <label style={styles.fieldLabel}>Policy year</label>
-                    <input
-                      type="text"
-                      value={policyYear}
-                      onChange={(e) => setPolicyYear(e.target.value)}
-                      placeholder="e.g. 2025-26"
-                      className="mis-field"
-                      style={styles.fieldInput}
-                    />
-                  </div>
-                  <div style={styles.fieldGroup}>
-                    <label style={styles.fieldLabel}>Inception premium (₹)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={inceptionPremium}
-                      onChange={(e) => setInceptionPremium(e.target.value)}
-                      placeholder="e.g. 2000000"
-                      className="mis-field"
-                      style={styles.fieldInput}
-                    />
-                  </div>
-                  <div style={styles.fieldGroup}>
-                    <label style={styles.fieldLabel}>Endorsement premium (₹)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={endorsementPremium}
-                      onChange={(e) => setEndorsementPremium(e.target.value)}
-                      placeholder="e.g. 150000"
-                      className="mis-field"
-                      style={styles.fieldInput}
-                    />
-                  </div>
-                  <div style={styles.fieldGroup}>
-                    <label style={styles.fieldLabel}>Earned premium (₹)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={earnedPremium}
-                      onChange={(e) => setEarnedPremium(e.target.value)}
-                      placeholder="e.g. 2150000"
-                      className="mis-field"
-                      style={styles.fieldInput}
-                    />
-                  </div>
-                  <div style={styles.fieldGroup}>
-                    <label style={styles.fieldLabel}>Inception lives</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={inceptionLives}
-                      onChange={(e) => setInceptionLives(e.target.value)}
-                      placeholder="e.g. 850"
-                      className="mis-field"
-                      style={styles.fieldInput}
-                    />
-                  </div>
-                  <div style={styles.fieldGroup}>
-                    <label style={styles.fieldLabel}>Expiring lives</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={expiringLives}
-                      onChange={(e) => setExpiringLives(e.target.value)}
-                      placeholder="e.g. 900"
-                      className="mis-field"
-                      style={styles.fieldInput}
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={handleViewInsights}
-                  className="mis-btn mis-btn-primary"
-                  style={{ ...styles.button, ...styles.buttonPrimary, marginTop: '20px' }}
-                >
-                  <BarChart3 size={15} /> View insights
-                </button>
-              </div>
-            </>
-          )}
-
-          <button onClick={() => setStep('preview')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary, marginTop: insightsRows ? '12px' : '20px' }}>
-            <ArrowLeft size={15} /> Back to preview
-          </button>
-        </div>
-      )}
-
-      {step === 'dashboard' && insightsRows && (() => {
-        const a = getDashboardAnalytics(insightsRows);
-        const fmtCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
-        return (
+        {step === 'select' && (
           <div style={styles.card}>
             <div style={styles.section}>
-              <div style={styles.sectionEyebrow}>Step 4 of 4</div>
-              <h2 style={styles.sectionTitle}>Data insights dashboard</h2>
-              <p style={styles.description}>Visual breakdown of the {insightsRows.length} rows from the uploaded file.</p>
-              {downloadedOnce && (
+              <div style={styles.sectionEyebrow}>Step 1 of 4</div>
+              <h2 style={styles.sectionTitle}>Upload the insurer's MIS file</h2>
+              <p style={styles.description}>Upload the raw Excel file exactly as received from the insurer. We'll try to detect which insurer it's from automatically from the column headers.</p>
+              <div
+                className="mis-upload"
+                style={{
+                  ...styles.uploadArea,
+                  ...(uploadedFile ? styles.uploadAreaFilled : {})
+                }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                />
+                {uploadedFile ? (
+                  <div style={styles.uploadedInfo}>
+                    <div style={styles.uploadedIconWrap}><FileSpreadsheet size={22} color={COLORS.accent} /></div>
+                    <div style={styles.uploadedText}>
+                      <strong style={{ color: COLORS.textPrimary }}>{uploadedFile.name}</strong>
+                      <div style={styles.uploadedSize}>{(uploadedFile.size / 1024).toFixed(2)} KB</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      className="mis-btn mis-btn-outline"
+                      style={styles.changeFileBtn}
+                    >
+                      Change file
+                    </button>
+                  </div>
+                ) : (
+                  <div style={styles.uploadPlaceholder}>
+                    <UploadCloud size={30} color={COLORS.textMuted} />
+                    <div style={styles.uploadText}>Click to upload, or drag and drop</div>
+                    <div style={styles.uploadHint}>Excel files · .xlsx or .xls</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={styles.divider} />
+
+            <div style={styles.section}>
+              <div style={styles.sectionEyebrow}>Step 2 of 4</div>
+              <h2 style={styles.sectionTitle}>Confirm the insurer</h2>
+              {detecting ? (
+                <p style={styles.description}>Detecting insurer from file headers…</p>
+              ) : autoDetected ? (
                 <p style={styles.noteSuccess}>
                   <Check size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                  <span>Built from {insightsFile ? insightsFile.name : 'your uploaded file'}.</span>
+                  <span>
+                    Auto-detected as <strong>{selectedInsurer}</strong> — change it below if that's wrong.
+                    {detectedSheetName && <> This file has multiple sheets; the <strong>"{detectedSheetName}"</strong> sheet was used since its columns matched.</>}
+                  </span>
+                </p>
+              ) : (
+                <p style={styles.description}>
+                  {uploadedFile ? "Couldn't auto-detect the insurer from this file — please select it manually." : "Choose which insurer's MIS format this file is in."}
+                </p>
+              )}
+              <select value={selectedInsurer} onChange={handleInsurerSelect} className="mis-field" style={styles.select}>
+                <option value="">— Choose insurer —</option>
+                {insurersList.map(insurer => (
+                  <option key={insurer} value={insurer}>{insurer}</option>
+                ))}
+              </select>
+              {selectedInsurer && (!columnMapping[selectedInsurer] || Object.keys(columnMapping[selectedInsurer]).length === 0) && (
+                <p style={styles.noteWarning}>
+                  <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>No column mapping found yet for {selectedInsurer}. Conversion will run, but most columns will come out blank until this insurer's mapping is added.</span>
                 </p>
               )}
             </div>
 
-            {/* Company / policy year header strip */}
-            <div style={styles.policyMetaStrip}>
+            <button
+              onClick={() => setStep('convert')}
+              disabled={!selectedInsurer || !uploadedFile}
+              className="mis-btn mis-btn-primary"
+              style={{
+                ...styles.button,
+                ...styles.buttonPrimary,
+                opacity: (!selectedInsurer || !uploadedFile) ? 0.4 : 1,
+                cursor: (!selectedInsurer || !uploadedFile) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Continue <ArrowRight size={15} />
+            </button>
+          </div>
+        )}
+
+        {step === 'convert' && (
+          <div style={styles.card}>
+            <div style={styles.section}>
+              <div style={styles.sectionEyebrow}>Step 2 of 4</div>
+              <h2 style={styles.sectionTitle}>Ready to convert</h2>
+              <p style={styles.description}>Review the details below, then convert this file into Healthysure's standard format.</p>
+              <div style={styles.summaryBox}>
+                <div style={styles.summaryRow}>
+                  <span style={styles.summaryLabel}>Insurer</span>
+                  <span style={styles.summaryValue}>{selectedInsurer}</span>
+                </div>
+                <div style={styles.summaryRow}>
+                  <span style={styles.summaryLabel}>File</span>
+                  <span style={styles.summaryValue}>{uploadedFile?.name}</span>
+                </div>
+                <div style={{ ...styles.summaryRow, borderBottom: 'none' }}>
+                  <span style={styles.summaryLabel}>Size</span>
+                  <span style={styles.summaryValue}>{uploadedFile ? (uploadedFile.size / 1024).toFixed(2) : 0} KB</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleConvert}
+              disabled={loading}
+              className="mis-btn mis-btn-primary"
+              style={{ ...styles.button, ...styles.buttonPrimary, opacity: loading ? 0.6 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+            >
+              {loading ? 'Converting…' : <>Convert to Healthysure format</>}
+            </button>
+
+            {loading && (
+              <div style={styles.progressContainer}>
+                <div style={styles.progressBar}>
+                  <div style={{ ...styles.progressFill, width: `${progress}%` }}></div>
+                </div>
+                <div style={styles.progressText}>{progress}% complete</div>
+              </div>
+            )}
+
+            <button onClick={() => setStep('select')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
+              <ArrowLeft size={15} /> Back
+            </button>
+          </div>
+        )}
+
+        {step === 'preview' && convertedRows && (
+          <div style={styles.card}>
+            <div style={styles.successBox}>
+              <div style={styles.successIconWrap}><Check size={22} color="#ffffff" strokeWidth={3} /></div>
               <div>
-                <div style={styles.policyMetaLabel}>Company name</div>
-                <div style={styles.policyMetaValue}>{companyName || '—'}</div>
-              </div>
-              <div>
-                <div style={styles.policyMetaLabel}>Policy year</div>
-                <div style={styles.policyMetaValue}>{policyYear || '—'}</div>
-              </div>
-            </div>
-
-            {/* Policy-level totals entered on Step 3 - shown as widgets, not derived from the file */}
-            <div style={styles.policyTotalsStrip}>
-              <div style={styles.policyTotalBox}>
-                <div style={styles.policyTotalLabel}>Inception premium</div>
-                <div style={styles.policyTotalValue}>{inceptionPremium !== '' ? fmtCurrency(inceptionPremium) : '—'}</div>
-              </div>
-              <div style={styles.policyTotalBox}>
-                <div style={styles.policyTotalLabel}>Endorsement premium</div>
-                <div style={styles.policyTotalValue}>{endorsementPremium !== '' ? fmtCurrency(endorsementPremium) : '—'}</div>
-              </div>
-              <div style={styles.policyTotalBox}>
-                <div style={styles.policyTotalLabel}>Earned premium</div>
-                <div style={styles.policyTotalValue}>{earnedPremium !== '' ? fmtCurrency(earnedPremium) : '—'}</div>
-              </div>
-              <div style={styles.policyTotalBox}>
-                <div style={styles.policyTotalLabel}>Inception lives</div>
-                <div style={styles.policyTotalValue}>{inceptionLives !== '' ? Number(inceptionLives).toLocaleString('en-IN') : '—'}</div>
-              </div>
-              <div style={styles.policyTotalBox}>
-                <div style={styles.policyTotalLabel}>Expiring lives</div>
-                <div style={styles.policyTotalValue}>{expiringLives !== '' ? Number(expiringLives).toLocaleString('en-IN') : '—'}</div>
+                <h2 style={styles.successTitle}>Conversion successful</h2>
+                <p style={styles.successText}>
+                  Converted <strong style={{ color: COLORS.textPrimary }}>{convertedRows.length} rows</strong> from {selectedInsurer} into Healthysure format
+                  {matchStats && <> · {matchStats.filled} of {matchStats.total} columns matched</>}
+                </p>
               </div>
             </div>
 
-            {/* Status by count */}
-            <div style={styles.statGroupBox}>
-              <div style={styles.statGroupTitle}>Status by count</div>
-              <div style={styles.statsStrip}>
-                {ALL_STATUSES.map(s => (
-                  <div key={s} style={styles.statBox}>
-                    <div style={{ ...styles.statValue, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{a.statusCounts[s]}</div>
-                    <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
+            {matchStats && matchStats.filled < matchStats.total * 0.3 && (
+              <p style={styles.noteWarning}>
+                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>
+                  Only {matchStats.filled} of {matchStats.total} columns matched — this usually means the
+                  wrong insurer was selected for this file (each insurer has different column names in the
+                  mapping sheet). Double-check that <strong>{selectedInsurer}</strong> is really the insurer
+                  this file came from, then try again.
+                </span>
+              </p>
+            )}
+
+            <div style={styles.section}>
+              <div style={styles.sectionEyebrow}>Preview</div>
+              <h2 style={styles.sectionTitle}>First 15 rows</h2>
+              <div style={styles.previewScroll}>
+                <table style={styles.previewTable}>
+                  <thead>
+                    <tr>
+                      {outputColumns.map(col => (
+                        <th key={col} style={styles.previewHeaderCell}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {convertedRows.slice(0, 15).map((row, i) => (
+                      <tr key={i} style={i % 2 === 0 ? styles.previewRowEven : styles.previewRowOdd}>
+                        {outputColumns.map(col => (
+                          <td key={col} style={styles.previewCell}>{row[col]}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {convertedRows.length > 15 && (
+                <p style={styles.previewNote}>+ {convertedRows.length - 15} more rows in the downloaded file</p>
+              )}
+            </div>
+
+            <div style={styles.buttonGroup}>
+              <button onClick={() => setStep('convert')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
+                <ArrowLeft size={15} /> Previous
+              </button>
+              <button onClick={handleDownload} className="mis-btn mis-btn-primary" style={{ ...styles.button, ...styles.buttonPrimary }}>
+                <Download size={15} /> Download Excel file
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'upload-insights' && (
+          <div style={styles.card}>
+            <div style={styles.section}>
+              <div style={styles.sectionEyebrow}>Step 3 of 4</div>
+              <h2 style={styles.sectionTitle}>Upload the final file for insights</h2>
+              <p style={styles.noteSuccess}>
+                <Check size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>Your file has been downloaded.</span>
+              </p>
+              <p style={styles.description}>
+                If your team made any edits to the downloaded file, make those changes and upload the
+                final version here. The dashboard is built from whatever file you upload —
+                not from the original conversion.
+              </p>
+              {insightsError && (
+                <div style={styles.errorBox}>
+                  <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                  <span>{insightsError}</span>
+                </div>
+              )}
+              <div
+                className="mis-upload"
+                style={{
+                  ...styles.uploadArea,
+                  ...(insightsFile ? styles.uploadAreaFilled : {})
+                }}
+                onClick={() => insightsFileInputRef.current?.click()}
+              >
+                <input
+                  ref={insightsFileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleInsightsFileUpload}
+                  style={{ display: 'none' }}
+                />
+                {insightsFile ? (
+                  <div style={styles.uploadedInfo}>
+                    <div style={styles.uploadedIconWrap}><FileSpreadsheet size={22} color={COLORS.accent} /></div>
+                    <div style={styles.uploadedText}>
+                      <strong style={{ color: COLORS.textPrimary }}>{insightsFile.name}</strong>
+                      <div style={styles.uploadedSize}>{(insightsFile.size / 1024).toFixed(2)} KB</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        insightsFileInputRef.current?.click();
+                      }}
+                      className="mis-btn mis-btn-outline"
+                      style={styles.changeFileBtn}
+                    >
+                      Change file
+                    </button>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Status by value */}
-            <div style={styles.statGroupBox}>
-              <div style={styles.statGroupTitle}>Status by value</div>
-              <div style={styles.statsStrip}>
-                {ALL_STATUSES.map(s => (
-                  <div key={s} style={styles.statBox}>
-                    <div style={{ ...styles.statValue, fontSize: '15px', ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{fmtCurrency(a.statusValueSums[s])}</div>
-                    <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
+                ) : (
+                  <div style={styles.uploadPlaceholder}>
+                    <UploadCloud size={30} color={COLORS.textMuted} />
+                    <div style={styles.uploadText}>
+                      {insightsLoading ? 'Reading file…' : 'Click to upload the final Excel file'}
+                    </div>
+                    <div style={styles.uploadHint}>Excel files · .xlsx or .xls</div>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
-            <div style={styles.dashboardGrid}>
+            {insightsRows && (
+              <>
+                <div style={styles.divider} />
+                <div style={styles.section}>
+                  <div style={styles.sectionEyebrow}>Step 3 of 4</div>
+                  <h2 style={styles.sectionTitle}>Policy details</h2>
+                  <p style={styles.description}>
+                    Enter the policy details below — these are shown as widgets at the top of the
+                    insights dashboard, alongside the charts.
+                  </p>
+                  {insightsFieldsError && (
+                    <div style={styles.errorBox}>
+                      <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                      <span>{insightsFieldsError}</span>
+                    </div>
+                  )}
+                  <div style={styles.fieldsRowWide}>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Company name</label>
+                      <input
+                        type="text"
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                        placeholder="e.g. Acme Pvt Ltd"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Policy year</label>
+                      <input
+                        type="text"
+                        value={policyYear}
+                        onChange={(e) => setPolicyYear(e.target.value)}
+                        placeholder="e.g. 2025-26"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Inception premium (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={inceptionPremium}
+                        onChange={(e) => setInceptionPremium(e.target.value)}
+                        placeholder="e.g. 2000000"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Endorsement premium (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={endorsementPremium}
+                        onChange={(e) => setEndorsementPremium(e.target.value)}
+                        placeholder="e.g. 150000"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Earned premium (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={earnedPremium}
+                        onChange={(e) => setEarnedPremium(e.target.value)}
+                        placeholder="e.g. 2150000"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Inception lives</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={inceptionLives}
+                        onChange={(e) => setInceptionLives(e.target.value)}
+                        placeholder="e.g. 850"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Expiring lives</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={expiringLives}
+                        onChange={(e) => setExpiringLives(e.target.value)}
+                        placeholder="e.g. 900"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleViewInsights}
+                    className="mis-btn mis-btn-primary"
+                    style={{ ...styles.button, ...styles.buttonPrimary, marginTop: '20px' }}
+                  >
+                    <BarChart3 size={15} /> View insights
+                  </button>
+                </div>
+              </>
+            )}
 
-              {/* 1. Cashless vs Reimbursement */}
-              <ChartCard
-                title="Cashless vs reimbursement"
-                renderChart={(h) => (
-                  <PopOutPieChart data={a.claimTypeData} height={h} />
+            <button onClick={() => setStep('preview')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary, marginTop: insightsRows ? '12px' : '20px' }}>
+              <ArrowLeft size={15} /> Back to preview
+            </button>
+          </div>
+        )}
+
+        {step === 'dashboard' && insightsRows && (() => {
+          const a = getDashboardAnalytics(insightsRows);
+          const fmtCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+          return (
+            <div style={styles.card}>
+              <div style={styles.section}>
+                <div style={styles.sectionEyebrow}>Step 4 of 4</div>
+                <h2 style={styles.sectionTitle}>Data insights dashboard</h2>
+                <p style={styles.description}>Visual breakdown of the {insightsRows.length} rows from the uploaded file.</p>
+                {downloadedOnce && (
+                  <p style={styles.noteSuccess}>
+                    <Check size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span>Built from {insightsFile ? insightsFile.name : 'your uploaded file'}.</span>
+                  </p>
                 )}
-              />
+              </div>
 
-              {/* 1b. Cashless vs Reimbursement — ratio, as a pie chart */}
-              <ChartCard
-                title="Cashless vs reimbursement ratio"
-                renderChart={(h) => (
-                  <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} />
-                )}
-              />
+              {/* Company / policy year header strip */}
+              <div style={styles.policyMetaStrip}>
+                <div>
+                  <div style={styles.policyMetaLabel}>Company name</div>
+                  <div style={styles.policyMetaValue}>{companyName || '—'}</div>
+                </div>
+                <div>
+                  <div style={styles.policyMetaLabel}>Policy year</div>
+                  <div style={styles.policyMetaValue}>{policyYear || '—'}</div>
+                </div>
+              </div>
 
-              {/* 2. Document Receipt (FDR vs LDR) — now a pie chart */}
-              <ChartCard
-                title="Document receipt (FDR vs LDR)"
-                renderChart={(h) => (
-                  <PopOutPieChart data={a.documentReceiptData} height={h} />
-                )}
-              />
+              {/* Policy-level totals entered on Step 3 - shown as widgets, not derived from the file */}
+              <div style={styles.policyTotalsStrip}>
+                <div style={styles.policyTotalBox}>
+                  <div style={styles.policyTotalLabel}>Inception premium</div>
+                  <div style={styles.policyTotalValue}>{inceptionPremium !== '' ? fmtCurrency(inceptionPremium) : '—'}</div>
+                </div>
+                <div style={styles.policyTotalBox}>
+                  <div style={styles.policyTotalLabel}>Endorsement premium</div>
+                  <div style={styles.policyTotalValue}>{endorsementPremium !== '' ? fmtCurrency(endorsementPremium) : '—'}</div>
+                </div>
+                <div style={styles.policyTotalBox}>
+                  <div style={styles.policyTotalLabel}>Earned premium</div>
+                  <div style={styles.policyTotalValue}>{earnedPremium !== '' ? fmtCurrency(earnedPremium) : '—'}</div>
+                </div>
+                <div style={styles.policyTotalBox}>
+                  <div style={styles.policyTotalLabel}>Inception lives</div>
+                  <div style={styles.policyTotalValue}>{inceptionLives !== '' ? Number(inceptionLives).toLocaleString('en-IN') : '—'}</div>
+                </div>
+                <div style={styles.policyTotalBox}>
+                  <div style={styles.policyTotalLabel}>Expiring lives</div>
+                  <div style={styles.policyTotalValue}>{expiringLives !== '' ? Number(expiringLives).toLocaleString('en-IN') : '—'}</div>
+                </div>
+              </div>
 
-              {/* 3. Age-wise split */}
-              <ChartCard
-                title="Age-wise split"
-                renderChart={(h) => (
-                  a.ageData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={h}>
-                      <BarChart data={a.ageData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
-                        <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                        <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                          <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                          {a.ageData.map((_, i) => (
-                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div style={styles.noDataBox}><p style={{ margin: 0 }}>No age data found in this file.</p></div>
-                  )
-                )}
-              />
+              {/* Status by count */}
+              <div style={styles.statGroupBox}>
+                <div style={styles.statGroupTitle}>Status by count</div>
+                <div style={styles.statsStrip}>
+                  {ALL_STATUSES.map(s => (
+                    <div key={s} style={styles.statBox}>
+                      <div style={{ ...styles.statValue, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{a.statusCounts[s]}</div>
+                      <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-              {/* 4. Relationship-wise split */}
-              <ChartCard
-                title="Relationship-wise split"
-                renderChart={(h) => (
-                  <PopOutPieChart data={a.relationData} height={h} />
-                )}
-              />
+              {/* Status by value */}
+              <div style={styles.statGroupBox}>
+                <div style={styles.statGroupTitle}>Status by value</div>
+                <div style={styles.statsStrip}>
+                  {ALL_STATUSES.map(s => (
+                    <div key={s} style={styles.statBox}>
+                      <div style={{ ...styles.statValue, fontSize: '15px', ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{fmtCurrency(a.statusValueSums[s])}</div>
+                      <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-              {/* 5. Claims by city — no India city-level map is available, so
+              <div style={styles.dashboardGrid}>
+
+                {/* 1. Cashless vs Reimbursement */}
+                <ChartCard
+                  title="Cashless vs reimbursement"
+                  renderChart={(h) => (
+                    <PopOutPieChart data={a.claimTypeData} height={h} />
+                  )}
+                />
+
+                {/* 1b. Cashless vs Reimbursement — ratio, as a pie chart */}
+                <ChartCard
+                  title="Cashless vs reimbursement ratio"
+                  renderChart={(h) => (
+                    <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} />
+                  )}
+                />
+
+                {/* 2. Document Receipt (FDR vs LDR) — now a pie chart */}
+                <ChartCard
+                  title="Document receipt (FDR vs LDR)"
+                  renderChart={(h) => (
+                    <PopOutPieChart data={a.documentReceiptData} height={h} />
+                  )}
+                />
+
+                {/* 3. Age-wise split */}
+                <ChartCard
+                  title="Age-wise split"
+                  renderChart={(h) => (
+                    a.ageData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={h}>
+                        <BarChart data={a.ageData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                          <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                          <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                            <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                            {a.ageData.map((_, i) => (
+                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div style={styles.noDataBox}><p style={{ margin: 0 }}>No age data found in this file.</p></div>
+                    )
+                  )}
+                />
+
+                {/* 4. Relationship-wise split */}
+                <ChartCard
+                  title="Relationship-wise split"
+                  renderChart={(h) => (
+                    <PopOutPieChart data={a.relationData} height={h} />
+                  )}
+                />
+                {/* 5a. Claims by state — interactive India map */}
+                <ChartCard
+                  title="Claims by state"
+                  wide
+                  height={380}
+                  renderChart={(h) => (
+                    <IndiaClaimsMap
+                      stateCounts={a.stateCounts}
+                      unmatchedCount={a.unmatchedStateCount}
+                      height={h}
+                    />
+                  )}
+                />
+                {/* 5. Claims by city — no India city-level map is available, so
                   this is a horizontal bar chart of the top cities instead of
                   a choropleth. */}
-              <ChartCard
-                title="Claims by city"
-                wide
-                height={Math.max(260, a.cityData.length * 38)}
-                renderChart={(h) => (
-                  a.cityData.length > 0 ? (
+                <ChartCard
+                  title="Claims by city"
+                  wide
+                  height={Math.max(260, a.cityData.length * 38)}
+                  renderChart={(h) => (
+                    a.cityData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={h}>
+                        <BarChart
+                          data={a.cityData}
+                          layout="vertical"
+                          margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                          <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                          <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
+                          <Tooltip content={<WrappedBarTooltip color={COLORS.accent} />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                          <Bar dataKey="value" fill={COLORS.accent} radius={[0, 4, 4, 0]} maxBarSize={26}>
+                            <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div style={styles.noDataBox}><p style={{ margin: 0 }}>No city data found in this file.</p></div>
+                    )
+                  )}
+                />
+
+                {/* 6. Rejected claims reasons */}
+                <ChartCard
+                  title="Rejected claims — reasons"
+                  height={Math.max(260, a.rejectionReasonData.length * 42)}
+                  renderChart={(h) => (
+                    a.rejectionReasonData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={h}>
+                        <BarChart
+                          data={a.rejectionReasonData}
+                          layout="vertical"
+                          margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                          <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                          <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
+                          <Tooltip content={<WrappedBarTooltip color={COLORS.danger} />} cursor={{ fill: 'rgba(224,102,92,0.08)' }} />
+                          <Bar dataKey="value" fill={COLORS.danger} radius={[0, 4, 4, 0]} maxBarSize={26}>
+                            <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div style={styles.noDataBox}><p style={{ margin: 0 }}>No rejected claims in this file.</p></div>
+                    )
+                  )}
+                />
+
+                {/* 7. Disease-wise split */}
+                <ChartCard
+                  title="Disease-wise split"
+                  height={Math.max(260, a.diseaseData.length * 42)}
+                  renderChart={(h) => (
                     <ResponsiveContainer width="100%" height={h}>
                       <BarChart
-                        data={a.cityData}
+                        data={a.diseaseData}
                         layout="vertical"
                         margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
                       >
@@ -2237,112 +2302,59 @@ const MISConverterTool = () => {
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
-                  ) : (
-                    <div style={styles.noDataBox}><p style={{ margin: 0 }}>No city data found in this file.</p></div>
-                  )
-                )}
-              />
+                  )}
+                />
 
-              {/* 6. Rejected claims reasons */}
-              <ChartCard
-                title="Rejected claims — reasons"
-                height={Math.max(260, a.rejectionReasonData.length * 42)}
-                renderChart={(h) => (
-                  a.rejectionReasonData.length > 0 ? (
+                {/* 7b. Claim nature — Maternity / Injury / Illness (below Disease-wise split) */}
+                <ChartCard
+                  title="Claim nature: Maternity / Injury / Illness"
+                  renderChart={(h) => (
                     <ResponsiveContainer width="100%" height={h}>
-                      <BarChart
-                        data={a.rejectionReasonData}
-                        layout="vertical"
-                        margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
-                      >
+                      <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                        <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                        <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
-                        <Tooltip content={<WrappedBarTooltip color={COLORS.danger} />} cursor={{ fill: 'rgba(224,102,92,0.08)' }} />
-                        <Bar dataKey="value" fill={COLORS.danger} radius={[0, 4, 4, 0]} maxBarSize={26}>
-                          <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                        <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                        <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                          {a.claimNatureData.map((_, i) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
-                  ) : (
-                    <div style={styles.noDataBox}><p style={{ margin: 0 }}>No rejected claims in this file.</p></div>
-                  )
-                )}
-              />
+                  )}
+                />
 
-              {/* 7. Disease-wise split */}
-              <ChartCard
-                title="Disease-wise split"
-                height={Math.max(260, a.diseaseData.length * 42)}
-                renderChart={(h) => (
-                  <ResponsiveContainer width="100%" height={h}>
-                    <BarChart
-                      data={a.diseaseData}
-                      layout="vertical"
-                      margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                      <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                      <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
-                      <Tooltip content={<WrappedBarTooltip color={COLORS.accent} />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                      <Bar dataKey="value" fill={COLORS.accent} radius={[0, 4, 4, 0]} maxBarSize={26}>
-                        <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              />
+              </div>
 
-              {/* 7b. Claim nature — Maternity / Injury / Illness (below Disease-wise split) */}
-              <ChartCard
-                title="Claim nature: Maternity / Injury / Illness"
-                renderChart={(h) => (
-                  <ResponsiveContainer width="100%" height={h}>
-                    <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                      <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
-                      <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                      <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                        <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                        {a.claimNatureData.map((_, i) => (
-                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              />
-
+              <div style={styles.buttonGroup}>
+                <button onClick={() => setStep('upload-insights')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
+                  <ArrowLeft size={15} /> Back
+                </button>
+                <button onClick={handleReset} className="mis-btn mis-btn-primary" style={{ ...styles.button, ...styles.buttonPrimary }}>
+                  <RotateCcw size={15} /> Convert another file
+                </button>
+              </div>
             </div>
+          );
+        })()}
 
-            <div style={styles.buttonGroup}>
-              <button onClick={() => setStep('upload-insights')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
-                <ArrowLeft size={15} /> Back
-              </button>
-              <button onClick={handleReset} className="mis-btn mis-btn-primary" style={{ ...styles.button, ...styles.buttonPrimary }}>
-                <RotateCcw size={15} /> Convert another file
-              </button>
-            </div>
+        <div style={styles.infoBox}>
+          <div style={styles.infoTitleRow}>
+            <Info size={15} color={COLORS.accent} />
+            <h3 style={styles.infoTitle}>How it works</h3>
           </div>
-        );
-      })()}
-
-      <div style={styles.infoBox}>
-        <div style={styles.infoTitleRow}>
-          <Info size={15} color={COLORS.accent} />
-          <h3 style={styles.infoTitle}>How it works</h3>
+          <ul style={styles.infoList}>
+            <li>Step 1 — select the insurer and upload their raw MIS Excel file.</li>
+            <li>Step 2 — review the file details and convert to Healthysure format.</li>
+            <li>Columns, status, and gender terms are mapped automatically from Healthysure's mapping sheet.</li>
+            <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
+            <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, policy year, premiums, lives) to generate the insights dashboard.</li>
+            <li>Dashboard covers: status by count/value, claim type, document receipt (FDR/LDR), age, relationship, disease, claim nature (Maternity/Injury/Illness), rejections, and a city-wise claims chart.</li>
+            <li>Every chart card has a copy icon — click it to copy that chart as a PNG straight to your clipboard, ready to paste into WhatsApp, Slack, or Word.</li>
+          </ul>
         </div>
-        <ul style={styles.infoList}>
-          <li>Step 1 — select the insurer and upload their raw MIS Excel file.</li>
-          <li>Step 2 — review the file details and convert to Healthysure format.</li>
-          <li>Columns, status, and gender terms are mapped automatically from Healthysure's mapping sheet.</li>
-          <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
-          <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, policy year, premiums, lives) to generate the insights dashboard.</li>
-          <li>Dashboard covers: status by count/value, claim type, document receipt (FDR/LDR), age, relationship, disease, claim nature (Maternity/Injury/Illness), rejections, and a city-wise claims chart.</li>
-          <li>Every chart card has a copy icon — click it to copy that chart as a PNG straight to your clipboard, ready to paste into WhatsApp, Slack, or Word.</li>
-        </ul>
-      </div>
       </main>
     </div>
   );
