@@ -156,8 +156,9 @@ const layoutCalloutColumn = (items, viewHeight) => {
 // Interactive choropleth of claim volume by state. Every state with at least
 // one claim gets a permanent leader-line callout (name + count) placed in a
 // column to the left or right of the map, instead of cramped text on the
-// shape itself.
-const IndiaClaimsMap = ({ stateCounts, unmatchedCount, height = 340 }) => {
+// shape itself. Callouts are labeled with the state's top city instead of
+// the state name (color/count still reflect the whole state).
+const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height = 340 }) => {
   const [hovered, setHovered] = useState(null); // { id, name, count }
   const [centroids, setCentroids] = useState({});
   const pathRefs = useRef({});
@@ -190,13 +191,14 @@ const IndiaClaimsMap = ({ stateCounts, unmatchedCount, height = 340 }) => {
 
   // One callout per state with claims, split left/right of the map's center
   // so leader lines stay short and don't criss-cross the whole country.
+  // Callouts use the state's top city name instead of the state name.
   const callouts = React.useMemo(() => {
     const mapCenterX = vbX + vbW / 2;
     const items = indiaMap.locations
       .filter(loc => (stateCounts[loc.name] || 0) > 0 && centroids[loc.id])
       .map(loc => ({
         id: loc.id,
-        name: loc.name,
+        name: stateTopCity[loc.name] || loc.name,
         count: stateCounts[loc.name],
         centroidX: centroids[loc.id].x,
         centroidY: centroids[loc.id].y
@@ -208,7 +210,7 @@ const IndiaClaimsMap = ({ stateCounts, unmatchedCount, height = 340 }) => {
       .map(it => ({ ...it, side: 'right' }));
 
     return [...left, ...right];
-  }, [stateCounts, centroids, vbX, vbW, vbH]);
+  }, [stateCounts, stateTopCity, centroids, vbX, vbW, vbH]);
 
   const extendedViewBox = `${vbX - CALLOUT_SIDE_PADDING} ${vbY} ${vbW + CALLOUT_SIDE_PADDING * 2} ${vbH}`;
   const leftElbowX = vbX - 14;
@@ -278,12 +280,12 @@ const IndiaClaimsMap = ({ stateCounts, unmatchedCount, height = 340 }) => {
                 y={c.labelY}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize={13}
+                fontSize={15}
                 fontWeight={700}
                 fill={COLORS.textPrimary}
                 style={{ pointerEvents: 'none', userSelect: 'none' }}
               >
-                {truncateLabel(c.name, 16)} · {c.count}
+                {truncateLabel(c.name, 18)} · {c.count}
               </text>
             </g>
           );
@@ -348,8 +350,9 @@ const renderActivePieSlice = (props) => {
 
 // Pie chart with hover pop-out behavior. Wrapped in its own component (rather
 // than an inline PieChart) so it can hold its own activeIndex state via hooks.
-const PopOutPieChart = ({ data, height }) => {
+const PopOutPieChart = ({ data, height, hidePercent = false }) => {
   const [activeIndex, setActiveIndex] = useState(-1);
+  const total = data.reduce((sum, d) => sum + (d.value || 0), 0);
   return (
     <ResponsiveContainer width="100%" height={height}>
       <PieChart>
@@ -360,7 +363,11 @@ const PopOutPieChart = ({ data, height }) => {
           cx="50%"
           cy="50%"
           outerRadius={Math.min(height, 260) * 0.35}
-          label={({ name, value }) => `${name}: ${value}`}
+          label={({ name, value }) => {
+            if (hidePercent) return `${name}: ${value}`;
+            const pct = total ? Math.round((value / total) * 100) : 0;
+            return `${name}: ${value} (${pct}%)`;
+          }}
           activeIndex={activeIndex}
           activeShape={renderActivePieSlice}
           onMouseEnter={(_, index) => setActiveIndex(index)}
@@ -570,6 +577,27 @@ const bucketAge = (value) => {
   return bracket ? bracket.label : 'Unknown';
 };
 
+// Groups raw relation values into 3 broad buckets for the Relationship-wise
+// split chart — Spouse / Children / Parent. "Self" is kept separate since
+// it means the employee's own claim, not a dependent relation; anything
+// else unrecognized falls into "Other".
+const RELATION_KEYWORDS = {
+  Self: ['self'],
+  Spouse: ['spouse', 'wife', 'husband'],
+  Children: ['son', 'daughter', 'child'],
+  Parent: ['father', 'mother', 'parent']
+};
+
+const bucketRelation = (raw) => {
+  const text = String(raw || '').trim().toLowerCase();
+  if (!text) return 'Other';
+  if (RELATION_KEYWORDS.Self.some(k => text.includes(k))) return 'Self';
+  if (RELATION_KEYWORDS.Spouse.some(k => text.includes(k))) return 'Spouse';
+  if (RELATION_KEYWORDS.Children.some(k => text.includes(k))) return 'Children';
+  if (RELATION_KEYWORDS.Parent.some(k => text.includes(k))) return 'Parent';
+  return 'Other';
+};
+
 // The four stages of the pipeline. This genuinely is a linear process — a
 // file has to be uploaded, converted, then re-uploaded with edits before
 // insights can be built — so a numbered stepper encodes real information
@@ -651,6 +679,7 @@ const getDashboardAnalytics = (rows) => {
   const ageCounts = {};
   const stateCounts = {};
   const cityCounts = {};
+  const stateCityCounts = {};
   const claimNatureCounts = { Maternity: 0, Injury: 0, Illness: 0 };
   // Standardized Status values, tracked both by claim count and by total
   // claimed value (₹) so the dashboard can show "Status by count" and
@@ -673,8 +702,8 @@ const getDashboardAnalytics = (rows) => {
     if (row['FDR']) totalClaimsWithFDR += 1;
     if (row['LDR']) totalClaimsWithLDR += 1;
 
-    // 4. Relationship-wise split
-    const relation = String(row['benef_relation'] || '').trim() || 'Unknown';
+    // 4. Relationship-wise split — use bucketRelation to consolidate
+    const relation = bucketRelation(row['benef_relation']);
     relationCounts[relation] = (relationCounts[relation] || 0) + 1;
 
     // Age-wise split
@@ -689,11 +718,15 @@ const getDashboardAnalytics = (rows) => {
       unmatchedStateCount += 1;
     }
 
-    // 5b. Claims by city — no India city-level map is available, so this
-    // drives a "Claims by city" bar chart instead of a choropleth.
+    // 5b. Claims by city — also tracked per-state so the India map can
+    // label each state with its top city instead of the state name.
     const cityName = String(row['City'] || '').trim();
     if (cityName) {
       cityCounts[cityName] = (cityCounts[cityName] || 0) + 1;
+      if (stateName) {
+        if (!stateCityCounts[stateName]) stateCityCounts[stateName] = {};
+        stateCityCounts[stateName][cityName] = (stateCityCounts[stateName][cityName] || 0) + 1;
+      }
     }
 
     // 6. Rejected claims reasons
@@ -746,6 +779,12 @@ const getDashboardAnalytics = (rows) => {
       .filter(label => ageCounts[label] > 0)
       .map(label => ({ name: label, value: ageCounts[label] })),
     stateCounts,
+    stateTopCity: Object.fromEntries(
+      Object.entries(stateCityCounts).map(([state, cities]) => [
+        state,
+        Object.entries(cities).sort((a, b) => b[1] - a[1])[0][0]
+      ])
+    ),
     unmatchedStateCount,
     cityData: toChartData(cityCounts, 10),
     rejectionReasonData: toChartData(rejectionReasonCounts, 8),
@@ -1593,8 +1632,6 @@ const MISConverterTool = () => {
       }
 
       setInsightsRows(data);
-      // Do NOT auto-advance to the dashboard - stay on Step 3 so policy
-      // details can be entered first.
     } catch (err) {
       setInsightsError(`Error reading file: ${err.message}`);
       console.error(err);
@@ -2168,7 +2205,7 @@ const MISConverterTool = () => {
                 <ChartCard
                   title="Cashless vs reimbursement ratio"
                   renderChart={(h) => (
-                    <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} />
+                    <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} hidePercent />
                   )}
                 />
 
@@ -2212,7 +2249,8 @@ const MISConverterTool = () => {
                     <PopOutPieChart data={a.relationData} height={h} />
                   )}
                 />
-                {/* 5a. Claims by state — interactive India map */}
+
+                {/* 5. Claims by state — interactive India map, labeled with cities */}
                 <ChartCard
                   title="Claims by state"
                   wide
@@ -2220,38 +2258,10 @@ const MISConverterTool = () => {
                   renderChart={(h) => (
                     <IndiaClaimsMap
                       stateCounts={a.stateCounts}
+                      stateTopCity={a.stateTopCity}
                       unmatchedCount={a.unmatchedStateCount}
                       height={h}
                     />
-                  )}
-                />
-                {/* 5. Claims by city — no India city-level map is available, so
-                  this is a horizontal bar chart of the top cities instead of
-                  a choropleth. */}
-                <ChartCard
-                  title="Claims by city"
-                  wide
-                  height={Math.max(260, a.cityData.length * 38)}
-                  renderChart={(h) => (
-                    a.cityData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={h}>
-                        <BarChart
-                          data={a.cityData}
-                          layout="vertical"
-                          margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                          <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                          <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
-                          <Tooltip content={<WrappedBarTooltip color={COLORS.accent} />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                          <Bar dataKey="value" fill={COLORS.accent} radius={[0, 4, 4, 0]} maxBarSize={26}>
-                            <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div style={styles.noDataBox}><p style={{ margin: 0 }}>No city data found in this file.</p></div>
-                    )
                   )}
                 />
 
@@ -2351,8 +2361,9 @@ const MISConverterTool = () => {
             <li>Columns, status, and gender terms are mapped automatically from Healthysure's mapping sheet.</li>
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
             <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, policy year, premiums, lives) to generate the insights dashboard.</li>
-            <li>Dashboard covers: status by count/value, claim type, document receipt (FDR/LDR), age, relationship, disease, claim nature (Maternity/Injury/Illness), rejections, and a city-wise claims chart.</li>
+            <li>Dashboard covers: status by count/value, claim type, document receipt (FDR/LDR), age, relationship (grouped as Parent/Children/Spouse), disease, claim nature (Maternity/Injury/Illness), rejections, and state/city claims labeled with each state's top city.</li>
             <li>Every chart card has a copy icon — click it to copy that chart as a PNG straight to your clipboard, ready to paste into WhatsApp, Slack, or Word.</li>
+            <li>All pie charts now show percentages alongside counts for clearer data interpretation.</li>
           </ul>
         </div>
       </main>
@@ -2622,9 +2633,6 @@ const styles = {
   policyTotalLabel: { fontSize: '11px', color: COLORS.accentDeep, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' },
   policyTotalValue: { fontSize: '22px', fontWeight: 800, color: COLORS.accentDeep, fontVariantNumeric: 'tabular-nums' },
 
-  // Wraps a whole stat row (heading + strip) in the same mint/dark theme as
-  // the policy-totals boxes above, so "Status by count" / "Status by value"
-  // visually match them, with the heading placed inside the box.
   statGroupBox: {
     backgroundColor: COLORS.mint,
     border: `1px solid ${COLORS.borderStrong}`,
@@ -2681,6 +2689,7 @@ const styles = {
     background: COLORS.surface, border: `1px solid ${COLORS.borderStrong}`, borderRadius: '7px',
     color: COLORS.textSecondary, cursor: 'pointer'
   },
+  chartModalBody: {},
   noDataBox: {
     backgroundColor: 'rgba(154,107,0,0.06)', border: `1px solid rgba(154,107,0,0.25)`,
     borderRadius: '8px', padding: '16px 18px', fontSize: '12.5px', color: COLORS.warning,
