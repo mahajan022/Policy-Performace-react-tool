@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-import { toBlob } from 'html-to-image';
+import { toBlob, toCanvas } from 'html-to-image';
+import jsPDF from 'jspdf';
 import {
   PieChart, Pie, Cell, Sector, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList
@@ -834,6 +835,12 @@ const MISConverterTool = () => {
   const [inceptionLives, setInceptionLives] = useState('');
   const [expiringLives, setExpiringLives] = useState('');
   const [insightsFieldsError, setInsightsFieldsError] = useState('');
+
+  // Ref around the entire exportable dashboard region (header strip through
+  // the last chart) and a loading flag for the "Download full dashboard as
+  // PDF" action below.
+  const dashboardExportRef = useRef(null);
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   const insurersList = [
     "ABHI Inhouse",
@@ -1690,6 +1697,68 @@ const MISConverterTool = () => {
     if (insightsFileInputRef.current) insightsFileInputRef.current.value = '';
   };
 
+  // Captures everything inside dashboardExportRef (company/policy header
+  // through the last chart) as a single tall canvas, then slices it into
+  // A4-sized pages and saves a multi-page PDF. Uses the exact on-screen
+  // rendering (colors, callouts, India map, etc.) so the PDF matches what
+  // the user sees.
+  const handleDownloadDashboardPDF = async () => {
+    const node = dashboardExportRef.current;
+    if (!node) return;
+
+    setPdfExporting(true);
+    setError('');
+
+    try {
+      const canvas = await toCanvas(node, {
+        backgroundColor: COLORS.bgElevated,
+        pixelRatio: 2, // retina-quality capture
+        cacheBust: true
+      });
+
+      const pdf = new jsPDF('p', 'pt', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pageWidth;
+      const pageCanvasHeight = Math.floor((pageHeight * canvas.width) / imgWidth);
+
+      let renderedHeight = 0;
+      let firstPage = true;
+
+      // Slice the tall captured canvas into A4-sized chunks, one per PDF page
+      while (renderedHeight < canvas.height) {
+        const sliceHeight = Math.min(pageCanvasHeight, canvas.height - renderedHeight);
+
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+        pageCanvas.getContext('2d').drawImage(
+          canvas,
+          0, renderedHeight, canvas.width, sliceHeight,
+          0, 0, canvas.width, sliceHeight
+        );
+
+        const pageImgData = pageCanvas.toDataURL('image/png');
+        const pageImgHeight = (sliceHeight * imgWidth) / canvas.width;
+
+        if (!firstPage) pdf.addPage();
+        pdf.addImage(pageImgData, 'PNG', 0, 0, imgWidth, pageImgHeight);
+
+        firstPage = false;
+        renderedHeight += sliceHeight;
+      }
+
+      const safeCompany = (companyName || 'Report').replace(/\s+/g, '_');
+      pdf.save(`Healthysure_Dashboard_${safeCompany}_${Date.now()}.pdf`);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      setError('Failed to generate the dashboard PDF. Please try again.');
+    } finally {
+      setPdfExporting(false);
+    }
+  };
+
   return (
     <div className="mis-tool-shell" style={styles.container}>
       <style>{styles.interactionStyles}</style>
@@ -2131,214 +2200,238 @@ const MISConverterTool = () => {
                 )}
               </div>
 
-              {/* Company / policy year header strip */}
-              <div style={styles.policyMetaStrip}>
-                <div style={styles.policyMetaBox}>
-                  <div style={styles.policyMetaLabel}>Company name</div>
-                  <div style={styles.policyMetaValue}>{companyName || '—'}</div>
+              {/* Everything from here through the end of dashboardGrid is what
+                  gets captured for the "Download full dashboard as PDF" button below. */}
+              <div ref={dashboardExportRef} style={{ backgroundColor: COLORS.bgElevated }}>
+
+                {/* Company / policy year header strip */}
+                <div style={styles.policyMetaStrip}>
+                  <div style={styles.policyMetaBox}>
+                    <div style={styles.policyMetaLabel}>Company name</div>
+                    <div style={styles.policyMetaValue}>{companyName || '—'}</div>
+                  </div>
+                  <div style={styles.policyMetaBox}>
+                    <div style={styles.policyMetaLabel}>Policy year</div>
+                    <div style={styles.policyMetaValue}>{policyYear || '—'}</div>
+                  </div>
                 </div>
-                <div style={styles.policyMetaBox}>
-                  <div style={styles.policyMetaLabel}>Policy year</div>
-                  <div style={styles.policyMetaValue}>{policyYear || '—'}</div>
+
+                {/* Policy-level totals entered on Step 3 - shown as widgets, not derived from the file */}
+                <div style={styles.policyTotalsStrip}>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Inception premium</div>
+                    <div style={styles.policyTotalValue}>{inceptionPremium !== '' ? fmtCurrency(inceptionPremium) : '—'}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Endorsement premium</div>
+                    <div style={styles.policyTotalValue}>{endorsementPremium !== '' ? fmtCurrency(endorsementPremium) : '—'}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Earned premium</div>
+                    <div style={styles.policyTotalValue}>{earnedPremium !== '' ? fmtCurrency(earnedPremium) : '—'}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Inception lives</div>
+                    <div style={styles.policyTotalValue}>{inceptionLives !== '' ? Number(inceptionLives).toLocaleString('en-IN') : '—'}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Expiring lives</div>
+                    <div style={styles.policyTotalValue}>{expiringLives !== '' ? Number(expiringLives).toLocaleString('en-IN') : '—'}</div>
+                  </div>
                 </div>
-              </div>
 
-              {/* Policy-level totals entered on Step 3 - shown as widgets, not derived from the file */}
-              <div style={styles.policyTotalsStrip}>
-                <div style={styles.policyTotalBox}>
-                  <div style={styles.policyTotalLabel}>Inception premium</div>
-                  <div style={styles.policyTotalValue}>{inceptionPremium !== '' ? fmtCurrency(inceptionPremium) : '—'}</div>
+                {/* Status by count */}
+                <div style={styles.statGroupBox}>
+                  <div style={styles.statGroupTitle}>Status by count</div>
+                  <div style={styles.statsStrip}>
+                    {ALL_STATUSES.map(s => (
+                      <div key={s} style={styles.statBox}>
+                        <div style={{ ...styles.statValue, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{a.statusCounts[s]}</div>
+                        <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div style={styles.policyTotalBox}>
-                  <div style={styles.policyTotalLabel}>Endorsement premium</div>
-                  <div style={styles.policyTotalValue}>{endorsementPremium !== '' ? fmtCurrency(endorsementPremium) : '—'}</div>
+
+                {/* Status by value */}
+                <div style={styles.statGroupBox}>
+                  <div style={styles.statGroupTitle}>Status by value</div>
+                  <div style={styles.statsStrip}>
+                    {ALL_STATUSES.map(s => (
+                      <div key={s} style={styles.statBox}>
+                        <div style={{ ...styles.statValue, fontSize: '15px', ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{fmtCurrency(a.statusValueSums[s])}</div>
+                        <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div style={styles.policyTotalBox}>
-                  <div style={styles.policyTotalLabel}>Earned premium</div>
-                  <div style={styles.policyTotalValue}>{earnedPremium !== '' ? fmtCurrency(earnedPremium) : '—'}</div>
-                </div>
-                <div style={styles.policyTotalBox}>
-                  <div style={styles.policyTotalLabel}>Inception lives</div>
-                  <div style={styles.policyTotalValue}>{inceptionLives !== '' ? Number(inceptionLives).toLocaleString('en-IN') : '—'}</div>
-                </div>
-                <div style={styles.policyTotalBox}>
-                  <div style={styles.policyTotalLabel}>Expiring lives</div>
-                  <div style={styles.policyTotalValue}>{expiringLives !== '' ? Number(expiringLives).toLocaleString('en-IN') : '—'}</div>
-                </div>
-              </div>
 
-              {/* Status by count */}
-              <div style={styles.statGroupBox}>
-                <div style={styles.statGroupTitle}>Status by count</div>
-                <div style={styles.statsStrip}>
-                  {ALL_STATUSES.map(s => (
-                    <div key={s} style={styles.statBox}>
-                      <div style={{ ...styles.statValue, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{a.statusCounts[s]}</div>
-                      <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                <div style={styles.dashboardGrid}>
 
-              {/* Status by value */}
-              <div style={styles.statGroupBox}>
-                <div style={styles.statGroupTitle}>Status by value</div>
-                <div style={styles.statsStrip}>
-                  {ALL_STATUSES.map(s => (
-                    <div key={s} style={styles.statBox}>
-                      <div style={{ ...styles.statValue, fontSize: '15px', ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{fmtCurrency(a.statusValueSums[s])}</div>
-                      <div style={{ ...styles.statLabel, ...(s === 'Rejected' ? { color: COLORS.danger } : {}) }}>{s}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                  {/* 1. Cashless vs Reimbursement */}
+                  <ChartCard
+                    title="Cashless vs reimbursement"
+                    renderChart={(h) => (
+                      <PopOutPieChart data={a.claimTypeData} height={h} />
+                    )}
+                  />
 
-              <div style={styles.dashboardGrid}>
+                  {/* 1b. Cashless vs Reimbursement — ratio, as a pie chart */}
+                  <ChartCard
+                    title="Cashless vs reimbursement ratio"
+                    renderChart={(h) => (
+                      <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} isRatio />
+                    )}
+                  />
 
-                {/* 1. Cashless vs Reimbursement */}
-                <ChartCard
-                  title="Cashless vs reimbursement"
-                  renderChart={(h) => (
-                    <PopOutPieChart data={a.claimTypeData} height={h} />
-                  )}
-                />
+                  {/* 2. Document Receipt (FDR vs LDR) — now a pie chart */}
+                  <ChartCard
+                    title="Document receipt (FDR vs LDR)"
+                    renderChart={(h) => (
+                      <PopOutPieChart data={a.documentReceiptData} height={h} />
+                    )}
+                  />
 
-                {/* 1b. Cashless vs Reimbursement — ratio, as a pie chart */}
-                <ChartCard
-                  title="Cashless vs reimbursement ratio"
-                  renderChart={(h) => (
-                    <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} isRatio />
-                  )}
-                />
+                  {/* 3. Age-wise split */}
+                  <ChartCard
+                    title="Age-wise split"
+                    renderChart={(h) => (
+                      a.ageData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={h}>
+                          <BarChart data={a.ageData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                            <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                            <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                            <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                              <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                              {a.ageData.map((_, i) => (
+                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>No age data found in this file.</p></div>
+                      )
+                    )}
+                  />
 
-                {/* 2. Document Receipt (FDR vs LDR) — now a pie chart */}
-                <ChartCard
-                  title="Document receipt (FDR vs LDR)"
-                  renderChart={(h) => (
-                    <PopOutPieChart data={a.documentReceiptData} height={h} />
-                  )}
-                />
+                  {/* 4. Relationship-wise split */}
+                  <ChartCard
+                    title="Relationship-wise split"
+                    renderChart={(h) => (
+                      <PopOutPieChart data={a.relationData} height={h} />
+                    )}
+                  />
 
-                {/* 3. Age-wise split */}
-                <ChartCard
-                  title="Age-wise split"
-                  renderChart={(h) => (
-                    a.ageData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={h}>
-                        <BarChart data={a.ageData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
-                          <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                          <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                            <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                            {a.ageData.map((_, i) => (
-                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div style={styles.noDataBox}><p style={{ margin: 0 }}>No age data found in this file.</p></div>
-                    )
-                  )}
-                />
+                  {/* 5. Claims by state — interactive India map, labeled with cities */}
+                  <ChartCard
+                    title="Claims by state"
+                    wide
+                    height={380}
+                    renderChart={(h) => (
+                      <IndiaClaimsMap
+                        stateCounts={a.stateCounts}
+                        stateTopCity={a.stateTopCity}
+                        unmatchedCount={a.unmatchedStateCount}
+                        height={h}
+                      />
+                    )}
+                  />
 
-                {/* 4. Relationship-wise split */}
-                <ChartCard
-                  title="Relationship-wise split"
-                  renderChart={(h) => (
-                    <PopOutPieChart data={a.relationData} height={h} />
-                  )}
-                />
+                  {/* 6. Rejected claims reasons */}
+                  <ChartCard
+                    title="Rejected claims — reasons"
+                    height={Math.max(260, a.rejectionReasonData.length * 42)}
+                    renderChart={(h) => (
+                      a.rejectionReasonData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={h}>
+                          <BarChart
+                            data={a.rejectionReasonData}
+                            layout="vertical"
+                            margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                            <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                            <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
+                            <Tooltip content={<WrappedBarTooltip color={COLORS.danger} />} cursor={{ fill: 'rgba(224,102,92,0.08)' }} />
+                            <Bar dataKey="value" fill={COLORS.danger} radius={[0, 4, 4, 0]} maxBarSize={26}>
+                              <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>No rejected claims in this file.</p></div>
+                      )
+                    )}
+                  />
 
-                {/* 5. Claims by state — interactive India map, labeled with cities */}
-                <ChartCard
-                  title="Claims by state"
-                  wide
-                  height={380}
-                  renderChart={(h) => (
-                    <IndiaClaimsMap
-                      stateCounts={a.stateCounts}
-                      stateTopCity={a.stateTopCity}
-                      unmatchedCount={a.unmatchedStateCount}
-                      height={h}
-                    />
-                  )}
-                />
-
-                {/* 6. Rejected claims reasons */}
-                <ChartCard
-                  title="Rejected claims — reasons"
-                  height={Math.max(260, a.rejectionReasonData.length * 42)}
-                  renderChart={(h) => (
-                    a.rejectionReasonData.length > 0 ? (
+                  {/* 7. Disease-wise split */}
+                  <ChartCard
+                    title="Disease-wise split"
+                    height={Math.max(260, a.diseaseData.length * 42)}
+                    renderChart={(h) => (
                       <ResponsiveContainer width="100%" height={h}>
                         <BarChart
-                          data={a.rejectionReasonData}
+                          data={a.diseaseData}
                           layout="vertical"
                           margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
                         >
                           <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
                           <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
                           <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
-                          <Tooltip content={<WrappedBarTooltip color={COLORS.danger} />} cursor={{ fill: 'rgba(224,102,92,0.08)' }} />
-                          <Bar dataKey="value" fill={COLORS.danger} radius={[0, 4, 4, 0]} maxBarSize={26}>
+                          <Tooltip content={<WrappedBarTooltip color={COLORS.accent} />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                          <Bar dataKey="value" fill={COLORS.accent} radius={[0, 4, 4, 0]} maxBarSize={26}>
                             <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
-                    ) : (
-                      <div style={styles.noDataBox}><p style={{ margin: 0 }}>No rejected claims in this file.</p></div>
-                    )
-                  )}
-                />
+                    )}
+                  />
 
-                {/* 7. Disease-wise split */}
-                <ChartCard
-                  title="Disease-wise split"
-                  height={Math.max(260, a.diseaseData.length * 42)}
-                  renderChart={(h) => (
-                    <ResponsiveContainer width="100%" height={h}>
-                      <BarChart
-                        data={a.diseaseData}
-                        layout="vertical"
-                        margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                        <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                        <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
-                        <Tooltip content={<WrappedBarTooltip color={COLORS.accent} />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                        <Bar dataKey="value" fill={COLORS.accent} radius={[0, 4, 4, 0]} maxBarSize={26}>
-                          <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                />
+                  {/* 7b. Claim nature — Maternity / Injury / Illness (below Disease-wise split) */}
+                  <ChartCard
+                    title="Claim nature: Maternity / Injury / Illness"
+                    renderChart={(h) => (
+                      <ResponsiveContainer width="100%" height={h}>
+                        <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                          <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                          <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                            <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                            {a.claimNatureData.map((_, i) => (
+                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  />
 
-                {/* 7b. Claim nature — Maternity / Injury / Illness (below Disease-wise split) */}
-                <ChartCard
-                  title="Claim nature: Maternity / Injury / Illness"
-                  renderChart={(h) => (
-                    <ResponsiveContainer width="100%" height={h}>
-                      <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
-                        <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                        <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                          <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                          {a.claimNatureData.map((_, i) => (
-                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                />
-
+                </div>
               </div>
+
+              {/* Download full dashboard as PDF — captures everything inside
+                  dashboardExportRef above and saves it as a paginated A4 PDF. */}
+              <button
+                onClick={handleDownloadDashboardPDF}
+                disabled={pdfExporting}
+                className="mis-btn mis-btn-primary"
+                style={{
+                  ...styles.button,
+                  ...styles.buttonPrimary,
+                  marginTop: '4px',
+                  marginBottom: '4px',
+                  opacity: pdfExporting ? 0.6 : 1,
+                  cursor: pdfExporting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <Download size={15} />
+                {pdfExporting ? 'Generating PDF…' : 'Download full dashboard as PDF'}
+              </button>
 
               <div style={styles.buttonGroup}>
                 <button onClick={() => setStep('upload-insights')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
@@ -2366,6 +2459,7 @@ const MISConverterTool = () => {
             <li>Dashboard covers: status by count/value, claim type, document receipt (FDR/LDR), age, relationship (grouped as Parent/Children/Spouse), disease, claim nature (Maternity/Injury/Illness), rejections, and state/city claims labeled with each state's top city.</li>
             <li>Every chart card has a copy icon — click it to copy that chart as a PNG straight to your clipboard, ready to paste into WhatsApp, Slack, or Word.</li>
             <li>All pie charts now show percentages alongside counts for clearer data interpretation.</li>
+            <li>Click "Download full dashboard as PDF" on the insights step to save the entire dashboard — header, totals, and all charts — as a single PDF file.</li>
           </ul>
         </div>
       </main>
@@ -2622,33 +2716,28 @@ const styles = {
     fontFamily: 'inherit', boxSizing: 'border-box'
   },
 
-policyMetaStrip: {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: '14px',
-  marginBottom: '20px'
-},
-policyMetaBox: {
-  backgroundColor: COLORS.accentDeep,
-  borderRadius: '12px',
-  padding: '18px 22px',
-  boxShadow: '0 10px 26px rgba(9,82,68,0.22)'
-},
-policyMetaLabel: {
-  fontSize: '11px',
-  color: 'rgba(255,255,255,0.75)',
-  fontWeight: 800,
-  textTransform: 'uppercase',
-  letterSpacing: '0.6px',
-  marginBottom: '6px'
-},
-policyMetaValue: {
-  fontSize: '26px',
-  fontWeight: 900,
-  color: '#ffffff',
-  letterSpacing: '-0.3px',
-  lineHeight: 1.15
-},
+  policyMetaStrip: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '20px' },
+  policyMetaBox: {
+    backgroundColor: COLORS.accentDeep,
+    borderRadius: '12px',
+    padding: '18px 22px',
+    boxShadow: '0 10px 26px rgba(9,82,68,0.22)'
+  },
+  policyMetaLabel: {
+    fontSize: '11px',
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.6px',
+    marginBottom: '6px'
+  },
+  policyMetaValue: {
+    fontSize: '26px',
+    fontWeight: 900,
+    color: '#ffffff',
+    letterSpacing: '-0.3px',
+    lineHeight: 1.15
+  },
 
   policyTotalsStrip: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px', marginBottom: '16px' },
   policyTotalBox: {
