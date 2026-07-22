@@ -497,6 +497,13 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 // same chart out into a larger centered modal (re-rendered at modal height via
 // renderChart). Both the inline card and the modal have their own "copy as
 // image" button, each capturing exactly what's on screen at that moment.
+//
+// NOTE ON `data-pdf-block="true"`:
+// This marks the outer card as an "unsplittable" unit for the dashboard PDF
+// export. handleDownloadDashboardPDF (below) scans the DOM for every element
+// with this attribute and refuses to slice a PDF page in the middle of one -
+// it pushes the whole card to the next page instead, unless the card alone
+// is taller than a full page (in which case it must split).
 const ChartCard = ({ title, renderChart, height = 260, note, wide = false }) => {
   const [zoomed, setZoomed] = useState(false);
   const cardRef = useRef(null);
@@ -504,7 +511,11 @@ const ChartCard = ({ title, renderChart, height = 260, note, wide = false }) => 
 
   return (
     <>
-      <div ref={cardRef} style={{ ...styles.chartCard, ...(wide ? { gridColumn: '1 / -1' } : {}) }}>
+      <div
+        ref={cardRef}
+        data-pdf-block="true"
+        style={{ ...styles.chartCard, ...(wide ? { gridColumn: '1 / -1' } : {}) }}
+      >
         <div style={styles.chartCardHeader}>
           <h3 style={{ ...styles.chartCardTitle, margin: 0 }}>{title}</h3>
           <div style={styles.chartHeaderBtnGroup}>
@@ -1702,6 +1713,17 @@ const MISConverterTool = () => {
   // A4-sized pages and saves a multi-page PDF. Uses the exact on-screen
   // rendering (colors, callouts, India map, etc.) so the PDF matches what
   // the user sees.
+  //
+  // SMART PAGE-BREAKS: naive slicing (fixed pixel height per page) can cut
+  // a chart card, the India map, or a stats strip right in half, since it
+  // has no idea where "safe" cut points are. To fix this, every card /
+  // strip that shouldn't be split is marked with data-pdf-block="true" in
+  // the JSX (see ChartCard, policyMetaStrip, policyTotalsStrip, and both
+  // statGroupBox blocks below). Before slicing each page, we check whether
+  // the natural cut line falls inside one of those blocks; if it does, the
+  // cut is pulled back to the top of that block instead, pushing the whole
+  // block onto the next page. A block only gets split if it's taller than
+  // a full page on its own (no other option in that case).
   const handleDownloadDashboardPDF = async () => {
     const node = dashboardExportRef.current;
     if (!node) return;
@@ -1716,6 +1738,22 @@ const MISConverterTool = () => {
         cacheBust: true
       });
 
+      // Map every "don't cut me" block's on-screen position into the
+      // captured canvas's pixel space, so we know which vertical ranges
+      // of the tall canvas must not be split by a page boundary.
+      const nodeRect = node.getBoundingClientRect();
+      const scaleX = nodeRect.width > 0 ? canvas.width / nodeRect.width : 1;
+      const blocks = Array.from(node.querySelectorAll('[data-pdf-block]'))
+        .map(el => {
+          const r = el.getBoundingClientRect();
+          return {
+            top: (r.top - nodeRect.top) * scaleX,
+            bottom: (r.bottom - nodeRect.top) * scaleX
+          };
+        })
+        .filter(b => b.bottom > b.top)
+        .sort((a, b) => a.top - b.top);
+
       const pdf = new jsPDF('p', 'pt', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
@@ -1726,27 +1764,51 @@ const MISConverterTool = () => {
       let renderedHeight = 0;
       let firstPage = true;
 
-      // Slice the tall captured canvas into A4-sized chunks, one per PDF page
+      // Slice the tall captured canvas into A4-sized chunks, one per PDF
+      // page, nudging each cut line above any block it would otherwise
+      // fall inside of.
       while (renderedHeight < canvas.height) {
-        const sliceHeight = Math.min(pageCanvasHeight, canvas.height - renderedHeight);
+        let sliceEnd = Math.min(renderedHeight + pageCanvasHeight, canvas.height);
+
+        // Does this natural cut line land inside a block we shouldn't split?
+        const breaking = blocks.find(b => b.top < sliceEnd && sliceEnd < b.bottom);
+        if (breaking && breaking.top > renderedHeight) {
+          const blockHeight = breaking.bottom - breaking.top;
+          if (blockHeight <= pageCanvasHeight) {
+            // Block fits on one page — pull the cut back to its top so the
+            // whole block moves to the next page instead of being split.
+            sliceEnd = breaking.top;
+          }
+          // else: block is taller than a full page, nothing we can do —
+          // let it split naturally, there's no alternative.
+        }
+
+        const sliceHeight = sliceEnd - renderedHeight;
+        if (sliceHeight <= 0) {
+          // Safety net: avoid an infinite loop if something odd happens
+          // with block measurements — just take a full page's worth.
+          sliceEnd = Math.min(renderedHeight + pageCanvasHeight, canvas.height);
+        }
+
+        const finalSliceHeight = sliceEnd - renderedHeight;
 
         const pageCanvas = document.createElement('canvas');
         pageCanvas.width = canvas.width;
-        pageCanvas.height = sliceHeight;
+        pageCanvas.height = finalSliceHeight;
         pageCanvas.getContext('2d').drawImage(
           canvas,
-          0, renderedHeight, canvas.width, sliceHeight,
-          0, 0, canvas.width, sliceHeight
+          0, renderedHeight, canvas.width, finalSliceHeight,
+          0, 0, canvas.width, finalSliceHeight
         );
 
         const pageImgData = pageCanvas.toDataURL('image/png');
-        const pageImgHeight = (sliceHeight * imgWidth) / canvas.width;
+        const pageImgHeight = (finalSliceHeight * imgWidth) / canvas.width;
 
         if (!firstPage) pdf.addPage();
         pdf.addImage(pageImgData, 'PNG', 0, 0, imgWidth, pageImgHeight);
 
         firstPage = false;
-        renderedHeight += sliceHeight;
+        renderedHeight += finalSliceHeight;
       }
 
       const safeCompany = (companyName || 'Report').replace(/\s+/g, '_');
@@ -2201,11 +2263,14 @@ const MISConverterTool = () => {
               </div>
 
               {/* Everything from here through the end of dashboardGrid is what
-                  gets captured for the "Download full dashboard as PDF" button below. */}
+                  gets captured for the "Download full dashboard as PDF" button below.
+                  Elements marked data-pdf-block="true" are treated as unsplittable
+                  units by handleDownloadDashboardPDF — see that function's comment
+                  for details. */}
               <div ref={dashboardExportRef} style={{ backgroundColor: COLORS.bgElevated }}>
 
                 {/* Company / policy year header strip */}
-                <div style={styles.policyMetaStrip}>
+                <div style={styles.policyMetaStrip} data-pdf-block="true">
                   <div style={styles.policyMetaBox}>
                     <div style={styles.policyMetaLabel}>Company name</div>
                     <div style={styles.policyMetaValue}>{companyName || '—'}</div>
@@ -2217,7 +2282,7 @@ const MISConverterTool = () => {
                 </div>
 
                 {/* Policy-level totals entered on Step 3 - shown as widgets, not derived from the file */}
-                <div style={styles.policyTotalsStrip}>
+                <div style={styles.policyTotalsStrip} data-pdf-block="true">
                   <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Inception premium</div>
                     <div style={styles.policyTotalValue}>{inceptionPremium !== '' ? fmtCurrency(inceptionPremium) : '—'}</div>
@@ -2241,7 +2306,7 @@ const MISConverterTool = () => {
                 </div>
 
                 {/* Status by count */}
-                <div style={styles.statGroupBox}>
+                <div style={styles.statGroupBox} data-pdf-block="true">
                   <div style={styles.statGroupTitle}>Status by count</div>
                   <div style={styles.statsStrip}>
                     {ALL_STATUSES.map(s => (
@@ -2254,7 +2319,7 @@ const MISConverterTool = () => {
                 </div>
 
                 {/* Status by value */}
-                <div style={styles.statGroupBox}>
+                <div style={styles.statGroupBox} data-pdf-block="true">
                   <div style={styles.statGroupTitle}>Status by value</div>
                   <div style={styles.statsStrip}>
                     {ALL_STATUSES.map(s => (
