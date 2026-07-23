@@ -10,7 +10,7 @@ import {
 import indiaMap from '@svg-maps/india';
 import {
   UploadCloud, Check, Download, BarChart3, X, ZoomIn, Copy, ArrowLeft,
-  ArrowRight, FileSpreadsheet, AlertTriangle, Info, RotateCcw
+  ArrowRight, FileSpreadsheet, AlertTriangle, Info, RotateCcw, Table2
 } from 'lucide-react';
 
 // ============================================================================
@@ -493,10 +493,66 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
   );
 };
 
-// Wraps a chart with a title bar + copy + zoom buttons; clicking zoom pops the
-// same chart out into a larger centered modal (re-rendered at modal height via
-// renderChart). Both the inline card and the modal have their own "copy as
-// image" button, each capturing exactly what's on screen at that moment.
+// Generic modal that shows the raw rows of the final uploaded Excel file
+// (the same file the whole insights dashboard is built from) so anyone
+// looking at a chart can immediately verify the numbers against source data.
+// Columns are read directly off the row objects rather than a fixed list,
+// since the uploaded "final" file may have been edited and its columns can
+// differ slightly from the standard Healthysure template.
+const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
+  const columns = rows && rows.length ? Object.keys(rows[0]) : [];
+  return (
+    <div style={styles.chartModalOverlay} onClick={onClose}>
+      <div style={styles.chartModalBox} onClick={e => e.stopPropagation()}>
+        <div style={styles.chartModalHeader}>
+          <h3 style={{ ...styles.chartCardTitle, margin: 0 }}>
+            Underlying data{fileName ? ` — ${fileName}` : ''}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mis-btn mis-icon-btn"
+            style={styles.chartModalCloseBtn}
+            aria-label="Close underlying data"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <p style={{ ...styles.previewNote, marginTop: 0, marginBottom: 10 }}>
+          {rows ? `${rows.length} row${rows.length === 1 ? '' : 's'} from the uploaded file used to build this dashboard.` : 'No data available.'}
+        </p>
+        <div style={styles.previewScroll}>
+          <table style={styles.previewTable}>
+            <thead>
+              <tr>
+                {columns.map(col => (
+                  <th key={col} style={styles.previewHeaderCell}>{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(rows || []).map((row, i) => (
+                <tr key={i} style={i % 2 === 0 ? styles.previewRowEven : styles.previewRowOdd}>
+                  {columns.map(col => (
+                    <td key={col} style={styles.previewCell}>{String(row[col] ?? '')}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Wraps a chart with a title bar + view-data + copy + zoom buttons; clicking
+// zoom pops the same chart out into a larger centered modal (re-rendered at
+// modal height via renderChart). Both the inline card and the modal have
+// their own "copy as image" button, each capturing exactly what's on screen
+// at that moment. "View underlying data" opens a table of the raw rows from
+// the uploaded final Excel file that the whole dashboard (and this chart)
+// was built from, so numbers can always be checked against source data.
 //
 // NOTE ON `data-pdf-block="true"`:
 // This marks the outer card as an "unsplittable" unit for the dashboard PDF
@@ -504,8 +560,9 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 // with this attribute and refuses to slice a PDF page in the middle of one -
 // it pushes the whole card to the next page instead, unless the card alone
 // is taller than a full page (in which case it must split).
-const ChartCard = ({ title, renderChart, height = 260, note, wide = false }) => {
+const ChartCard = ({ title, renderChart, height = 260, note, wide = false, insightsRows, insightsFileName }) => {
   const [zoomed, setZoomed] = useState(false);
+  const [showData, setShowData] = useState(false);
   const cardRef = useRef(null);
   const modalRef = useRef(null);
 
@@ -519,6 +576,18 @@ const ChartCard = ({ title, renderChart, height = 260, note, wide = false }) => 
         <div style={styles.chartCardHeader}>
           <h3 style={{ ...styles.chartCardTitle, margin: 0 }}>{title}</h3>
           <div style={styles.chartHeaderBtnGroup}>
+            {insightsRows && (
+              <button
+                type="button"
+                onClick={() => setShowData(true)}
+                className="mis-btn mis-icon-btn"
+                style={styles.chartIconBtn}
+                title="View underlying data"
+                aria-label={`View underlying data for ${title}`}
+              >
+                <Table2 size={14} />
+              </button>
+            )}
             <CopyImageButton
               getNode={() => cardRef.current}
               filenameBase={title}
@@ -570,6 +639,14 @@ const ChartCard = ({ title, renderChart, height = 260, note, wide = false }) => 
             </div>
           </div>
         </div>
+      )}
+
+      {showData && (
+        <UnderlyingDataModal
+          rows={insightsRows}
+          fileName={insightsFileName}
+          onClose={() => setShowData(false)}
+        />
       )}
     </>
   );
@@ -682,6 +759,11 @@ const bucketClaimNature = (disease, treatment, claimType1) => {
 
 // All standardized Status values (see statusMapping)
 const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Rejected', 'Settled', 'Withdrawn'];
+
+// Statuses that count as "outstanding" (O/S) — claims still moving through
+// the pipeline, i.e. not yet Settled, Rejected, or Withdrawn. Used only for
+// the annualized-claims estimate below.
+const OUTSTANDING_STATUSES = ['In Process', 'Under Query', 'Approved'];
 
 // Groups converted rows into everything the dashboard needs
 // FIXED: Now counts FDR/LDR for ALL claims, not just reimbursement
@@ -809,6 +891,72 @@ const getDashboardAnalytics = (rows) => {
   };
 };
 
+// Converts a value from an <input type="date"> ("YYYY-MM-DD") into a Date
+// object anchored at local midnight; returns null for empty/invalid input.
+const parseDateInput = (value) => {
+  if (!value) return null;
+  const d = new Date(`${value}T00:00:00`);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const daysBetween = (later, earlier) => Math.round((later - earlier) / (1000 * 60 * 60 * 24));
+
+// Loss-ratio / earned-premium math, following the Summary-sheet layout the
+// team already uses:
+//   Net Premium      = Inception Premium + Endorsement Premium
+//   Policy completed = (report date - policy start date + 1)   [if a start date was given]
+//                      OR 365 - (policy end date - report date) [if only an end date was given]
+//   Balance days     = 365 - Policy completed days
+//   Earned Premium   = Net Premium / 365 * Policy completed days
+//   LR (without IBNR)= Claims Paid / Earned Premium
+//   LR (with IBNR)   = LR (without IBNR) + 4%
+// Only ONE of policy start date / policy end date is required — whichever
+// the user provides.
+const computeLossRatio = ({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate }) => {
+  const netPremium = (Number(inceptionPremium) || 0) + (Number(endorsementPremium) || 0);
+  const claims = Number(claimsPaid) || 0;
+
+  const rd = parseDateInput(reportDate);
+  const sd = parseDateInput(policyStartDate);
+  const ed = parseDateInput(policyEndDate);
+
+  let completedDays = null;
+  if (rd && sd) {
+    completedDays = daysBetween(rd, sd) + 1;
+  } else if (rd && ed) {
+    const balance = daysBetween(ed, rd);
+    completedDays = 365 - balance;
+  }
+
+  if (completedDays === null || isNaN(completedDays)) {
+    return { netPremium, completedDays: null, balanceDays: null, earnedPremium: null, lossRatioWithoutIBNR: null, lossRatioWithIBNR: null };
+  }
+
+  completedDays = Math.max(0, Math.min(365, completedDays));
+  const balanceDays = 365 - completedDays;
+  const earnedPremium = (netPremium / 365) * completedDays;
+  const lossRatioWithoutIBNR = earnedPremium > 0 ? claims / earnedPremium : 0;
+  const lossRatioWithIBNR = lossRatioWithoutIBNR + 0.04;
+
+  return { netPremium, completedDays, balanceDays, earnedPremium, lossRatioWithoutIBNR, lossRatioWithIBNR };
+};
+
+// Annualized-claims estimate:
+//   O/S (outstanding)   = value of claims still In Process / Under Query / Approved
+//   IBNR                = 4% of (Claims Paid + O/S)
+//   Total Claims         = Claims Paid + O/S + IBNR
+//   Annualized Claims    = Total Claims x 365 / Policy completed days
+// NOTE: O/S is derived from the uploaded claims data's Status-wise values,
+// since it isn't collected as a separate manual field.
+const computeAnnualizedClaims = (statusValueSums, claimsPaid, completedDays) => {
+  const claims = Number(claimsPaid) || 0;
+  const outstanding = OUTSTANDING_STATUSES.reduce((sum, s) => sum + (statusValueSums?.[s] || 0), 0);
+  const ibnr = (claims + outstanding) * 0.04;
+  const totalClaims = claims + outstanding + ibnr;
+  const annualizedClaims = completedDays ? (totalClaims * 365) / completedDays : null;
+  return { outstanding, ibnr, totalClaims, annualizedClaims };
+};
+
 const MISConverterTool = () => {
   const [step, setStep] = useState('select'); // select, convert, preview, upload-insights, dashboard
   const [selectedInsurer, setSelectedInsurer] = useState('');
@@ -839,10 +987,14 @@ const MISConverterTool = () => {
   // widgets at the top of the dashboard (Step 4) rather than derived from
   // the file itself.
   const [companyName, setCompanyName] = useState('');
+  const [brokerName, setBrokerName] = useState('');
   const [policyYear, setPolicyYear] = useState('');
   const [inceptionPremium, setInceptionPremium] = useState('');
   const [endorsementPremium, setEndorsementPremium] = useState('');
-  const [earnedPremium, setEarnedPremium] = useState('');
+  const [claimsPaid, setClaimsPaid] = useState('');
+  const [reportDate, setReportDate] = useState('');
+  const [policyStartDate, setPolicyStartDate] = useState('');
+  const [policyEndDate, setPolicyEndDate] = useState('');
   const [inceptionLives, setInceptionLives] = useState('');
   const [expiringLives, setExpiringLives] = useState('');
   const [insightsFieldsError, setInsightsFieldsError] = useState('');
@@ -1665,16 +1817,19 @@ const MISConverterTool = () => {
       setInsightsFieldsError('Please upload the final Excel file first.');
       return;
     }
+    const hasDateAnchor = policyStartDate !== '' || policyEndDate !== '';
     if (
       companyName.trim() === '' ||
       policyYear === '' ||
       inceptionPremium === '' ||
       endorsementPremium === '' ||
-      earnedPremium === '' ||
+      claimsPaid === '' ||
+      reportDate === '' ||
+      !hasDateAnchor ||
       inceptionLives === '' ||
       expiringLives === ''
     ) {
-      setInsightsFieldsError('Please fill in all policy details before viewing insights.');
+      setInsightsFieldsError('Please fill in all policy details — including either a Policy Start Date or a Policy End Date — before viewing insights.');
       return;
     }
     setInsightsFieldsError('');
@@ -1694,10 +1849,14 @@ const MISConverterTool = () => {
     setInsightsRows(null);
     setInsightsError('');
     setCompanyName('');
+    setBrokerName('');
     setPolicyYear('');
     setInceptionPremium('');
     setEndorsementPremium('');
-    setEarnedPremium('');
+    setClaimsPaid('');
+    setReportDate('');
+    setPolicyStartDate('');
+    setPolicyEndDate('');
     setInceptionLives('');
     setExpiringLives('');
     setInsightsFieldsError('');
@@ -2136,7 +2295,8 @@ const MISConverterTool = () => {
                   <h2 style={styles.sectionTitle}>Policy details</h2>
                   <p style={styles.description}>
                     Enter the policy details below — these are shown as widgets at the top of the
-                    insights dashboard, alongside the charts.
+                    insights dashboard, alongside the charts. Net Premium, Earned Premium, and the Loss
+                    Ratios are calculated automatically from these inputs.
                   </p>
                   {insightsFieldsError && (
                     <div style={styles.errorBox}>
@@ -2152,6 +2312,17 @@ const MISConverterTool = () => {
                         value={companyName}
                         onChange={(e) => setCompanyName(e.target.value)}
                         placeholder="e.g. Acme Pvt Ltd"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Broker</label>
+                      <input
+                        type="text"
+                        value={brokerName}
+                        onChange={(e) => setBrokerName(e.target.value)}
+                        placeholder="e.g. Healthysure Insurance Brokers"
                         className="mis-field"
                         style={styles.fieldInput}
                       />
@@ -2192,13 +2363,43 @@ const MISConverterTool = () => {
                       />
                     </div>
                     <div style={styles.fieldGroup}>
-                      <label style={styles.fieldLabel}>Earned premium (₹)</label>
+                      <label style={styles.fieldLabel}>Claims paid (₹)</label>
                       <input
                         type="number"
                         min="0"
-                        value={earnedPremium}
-                        onChange={(e) => setEarnedPremium(e.target.value)}
-                        placeholder="e.g. 2150000"
+                        value={claimsPaid}
+                        onChange={(e) => setClaimsPaid(e.target.value)}
+                        placeholder="e.g. 2540053"
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Claims MIS report generation date</label>
+                      <input
+                        type="date"
+                        value={reportDate}
+                        onChange={(e) => setReportDate(e.target.value)}
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Policy start date <span style={{ fontWeight: 400, textTransform: 'none' }}>(or end date)</span></label>
+                      <input
+                        type="date"
+                        value={policyStartDate}
+                        onChange={(e) => setPolicyStartDate(e.target.value)}
+                        className="mis-field"
+                        style={styles.fieldInput}
+                      />
+                    </div>
+                    <div style={styles.fieldGroup}>
+                      <label style={styles.fieldLabel}>Policy end date <span style={{ fontWeight: 400, textTransform: 'none' }}>(or start date)</span></label>
+                      <input
+                        type="date"
+                        value={policyEndDate}
+                        onChange={(e) => setPolicyEndDate(e.target.value)}
                         className="mis-field"
                         style={styles.fieldInput}
                       />
@@ -2216,7 +2417,7 @@ const MISConverterTool = () => {
                       />
                     </div>
                     <div style={styles.fieldGroup}>
-                      <label style={styles.fieldLabel}>Expiring lives</label>
+                      <label style={styles.fieldLabel}>Current / expiring lives</label>
                       <input
                         type="number"
                         min="0"
@@ -2247,7 +2448,11 @@ const MISConverterTool = () => {
 
         {step === 'dashboard' && insightsRows && (() => {
           const a = getDashboardAnalytics(insightsRows);
+          const lr = computeLossRatio({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate });
+          const annualized = computeAnnualizedClaims(a.statusValueSums, claimsPaid, lr.completedDays);
           const fmtCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+          const fmtPct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
+          const fmtDays = (v) => (v === null || v === undefined ? '—' : `${v} days`);
           return (
             <div style={styles.card}>
               <div style={styles.section}>
@@ -2269,11 +2474,15 @@ const MISConverterTool = () => {
                   for details. */}
               <div ref={dashboardExportRef} style={{ backgroundColor: COLORS.bgElevated }}>
 
-                {/* Company / policy year header strip */}
+                {/* Company / broker / policy year header strip */}
                 <div style={styles.policyMetaStrip} data-pdf-block="true">
                   <div style={styles.policyMetaBox}>
                     <div style={styles.policyMetaLabel}>Company name</div>
                     <div style={styles.policyMetaValue}>{companyName || '—'}</div>
+                  </div>
+                  <div style={styles.policyMetaBox}>
+                    <div style={styles.policyMetaLabel}>Broker</div>
+                    <div style={styles.policyMetaValue}>{brokerName || '—'}</div>
                   </div>
                   <div style={styles.policyMetaBox}>
                     <div style={styles.policyMetaLabel}>Policy year</div>
@@ -2281,7 +2490,8 @@ const MISConverterTool = () => {
                   </div>
                 </div>
 
-                {/* Policy-level totals entered on Step 3 - shown as widgets, not derived from the file */}
+                {/* Policy-level totals entered on Step 3, plus Net Premium
+                    (calculated = Inception + Endorsement) - shown as widgets */}
                 <div style={styles.policyTotalsStrip} data-pdf-block="true">
                   <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Inception premium</div>
@@ -2292,16 +2502,72 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalValue}>{endorsementPremium !== '' ? fmtCurrency(endorsementPremium) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>Earned premium</div>
-                    <div style={styles.policyTotalValue}>{earnedPremium !== '' ? fmtCurrency(earnedPremium) : '—'}</div>
+                    <div style={styles.policyTotalLabel}>Net / Total premium</div>
+                    <div style={styles.policyTotalValue}>{fmtCurrency(lr.netPremium)}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Claims paid</div>
+                    <div style={styles.policyTotalValue}>{claimsPaid !== '' ? fmtCurrency(claimsPaid) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Inception lives</div>
                     <div style={styles.policyTotalValue}>{inceptionLives !== '' ? Number(inceptionLives).toLocaleString('en-IN') : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>Expiring lives</div>
+                    <div style={styles.policyTotalLabel}>Current lives</div>
                     <div style={styles.policyTotalValue}>{expiringLives !== '' ? Number(expiringLives).toLocaleString('en-IN') : '—'}</div>
+                  </div>
+                </div>
+
+                {/* Loss ratio calculation — Policy completed/balance days, Earned
+                    Premium, and both Loss Ratios, all derived from the Step 3 inputs */}
+                <div style={styles.statGroupBox} data-pdf-block="true">
+                  <div style={styles.statGroupTitle}>Loss ratio calculation</div>
+                  <div style={styles.statsStrip}>
+                    <div style={styles.statBox}>
+                      <div style={styles.statValue}>{fmtDays(lr.completedDays)}</div>
+                      <div style={styles.statLabel}>Policy completed</div>
+                    </div>
+                    <div style={styles.statBox}>
+                      <div style={styles.statValue}>{fmtDays(lr.balanceDays)}</div>
+                      <div style={styles.statLabel}>Balance days</div>
+                    </div>
+                    <div style={styles.statBox}>
+                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{lr.earnedPremium !== null ? fmtCurrency(lr.earnedPremium) : '—'}</div>
+                      <div style={styles.statLabel}>Earned premium</div>
+                    </div>
+                    <div style={styles.statBox}>
+                      <div style={styles.statValue}>{fmtPct(lr.lossRatioWithoutIBNR)}</div>
+                      <div style={styles.statLabel}>Loss ratio (w/o IBNR)</div>
+                    </div>
+                    <div style={styles.statBox}>
+                      <div style={styles.statValue}>{fmtPct(lr.lossRatioWithIBNR)}</div>
+                      <div style={styles.statLabel}>Loss ratio (with IBNR)</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Annualized claims — Claims Paid + O/S (from claim status data)
+                    + 4% IBNR = Total Claims, annualized over the full policy year */}
+                <div style={styles.statGroupBox} data-pdf-block="true">
+                  <div style={styles.statGroupTitle}>Annualized claims</div>
+                  <div style={styles.statsStrip}>
+                    <div style={styles.statBox}>
+                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.outstanding)}</div>
+                      <div style={styles.statLabel}>O/S (outstanding)</div>
+                    </div>
+                    <div style={styles.statBox}>
+                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.ibnr)}</div>
+                      <div style={styles.statLabel}>IBNR (4%)</div>
+                    </div>
+                    <div style={styles.statBox}>
+                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.totalClaims)}</div>
+                      <div style={styles.statLabel}>Total claims (incurred)</div>
+                    </div>
+                    <div style={styles.statBox}>
+                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{annualized.annualizedClaims !== null ? fmtCurrency(annualized.annualizedClaims) : '—'}</div>
+                      <div style={styles.statLabel}>Annualized claims</div>
+                    </div>
                   </div>
                 </div>
 
@@ -2336,6 +2602,8 @@ const MISConverterTool = () => {
                   {/* 1. Cashless vs Reimbursement */}
                   <ChartCard
                     title="Cashless vs reimbursement"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       <PopOutPieChart data={a.claimTypeData} height={h} />
                     )}
@@ -2344,6 +2612,8 @@ const MISConverterTool = () => {
                   {/* 1b. Cashless vs Reimbursement — ratio, as a pie chart */}
                   <ChartCard
                     title="Cashless vs reimbursement ratio"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} isRatio />
                     )}
@@ -2352,6 +2622,8 @@ const MISConverterTool = () => {
                   {/* 2. Document Receipt (FDR vs LDR) — now a pie chart */}
                   <ChartCard
                     title="Document receipt (FDR vs LDR)"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       <PopOutPieChart data={a.documentReceiptData} height={h} />
                     )}
@@ -2360,6 +2632,8 @@ const MISConverterTool = () => {
                   {/* 3. Age-wise split */}
                   <ChartCard
                     title="Age-wise split"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       a.ageData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={h}>
@@ -2385,6 +2659,8 @@ const MISConverterTool = () => {
                   {/* 4. Relationship-wise split */}
                   <ChartCard
                     title="Relationship-wise split"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       <PopOutPieChart data={a.relationData} height={h} />
                     )}
@@ -2395,6 +2671,8 @@ const MISConverterTool = () => {
                     title="Claims by state"
                     wide
                     height={380}
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       <IndiaClaimsMap
                         stateCounts={a.stateCounts}
@@ -2409,6 +2687,8 @@ const MISConverterTool = () => {
                   <ChartCard
                     title="Rejected claims — reasons"
                     height={Math.max(260, a.rejectionReasonData.length * 42)}
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       a.rejectionReasonData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={h}>
@@ -2436,6 +2716,8 @@ const MISConverterTool = () => {
                   <ChartCard
                     title="Disease-wise split"
                     height={Math.max(260, a.diseaseData.length * 42)}
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       <ResponsiveContainer width="100%" height={h}>
                         <BarChart
@@ -2458,6 +2740,8 @@ const MISConverterTool = () => {
                   {/* 7b. Claim nature — Maternity / Injury / Illness (below Disease-wise split) */}
                   <ChartCard
                     title="Claim nature: Maternity / Injury / Illness"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
                       <ResponsiveContainer width="100%" height={h}>
                         <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
@@ -2520,9 +2804,11 @@ const MISConverterTool = () => {
             <li>Step 2 — review the file details and convert to Healthysure format.</li>
             <li>Columns, status, and gender terms are mapped automatically from Healthysure's mapping sheet.</li>
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
-            <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, policy year, premiums, lives) to generate the insights dashboard.</li>
-            <li>Dashboard covers: status by count/value, claim type, document receipt (FDR/LDR), age, relationship (grouped as Parent/Children/Spouse), disease, claim nature (Maternity/Injury/Illness), rejections, and state/city claims labeled with each state's top city.</li>
-            <li>Every chart card has a copy icon — click it to copy that chart as a PNG straight to your clipboard, ready to paste into WhatsApp, Slack, or Word.</li>
+            <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, broker, policy year, premiums, claims paid, dates, lives) to generate the insights dashboard.</li>
+            <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
+            <li>Dashboard covers: status by count/value, loss ratio, annualized claims, claim type, document receipt (FDR/LDR), age, relationship (grouped as Parent/Children/Spouse), disease, claim nature (Maternity/Injury/Illness), rejections, and state/city claims labeled with each state's top city.</li>
+            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows of the uploaded final file that chart (and the whole dashboard) was built from.</li>
+            <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard, ready to paste into WhatsApp, Slack, or Word.</li>
             <li>All pie charts now show percentages alongside counts for clearer data interpretation.</li>
             <li>Click "Download full dashboard as PDF" on the insights step to save the entire dashboard — header, totals, and all charts — as a single PDF file.</li>
           </ul>
@@ -2781,7 +3067,7 @@ const styles = {
     fontFamily: 'inherit', boxSizing: 'border-box'
   },
 
-  policyMetaStrip: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '20px' },
+  policyMetaStrip: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '20px' },
   policyMetaBox: {
     backgroundColor: COLORS.accentDeep,
     borderRadius: '12px',
