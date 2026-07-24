@@ -501,7 +501,7 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 // differ slightly from the standard Healthysure template.
 const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
   const columns = rows && rows.length ? Object.keys(rows[0]) : [];
-
+  
   return (
     <div style={styles.chartModalOverlay} onClick={onClose}>
       <div style={styles.chartModalBox} onClick={e => e.stopPropagation()}>
@@ -942,13 +942,11 @@ const computeLossRatio = ({ inceptionPremium, endorsementPremium, claimsPaid, re
   return { netPremium, completedDays, balanceDays, earnedPremium, lossRatioWithoutIBNR, lossRatioWithIBNR };
 };
 
-// Annualized-claims estimate:
-//   O/S (outstanding)   = value of claims still In Process / Under Query / Approved
-//   IBNR                = 4% of (Claims Paid + O/S)
-//   Total Claims         = Claims Paid + O/S + IBNR
-//   Annualized Claims    = Total Claims x 365 / Policy completed days
-// NOTE: O/S is derived from the uploaded claims data's Status-wise values,
-// since it isn't collected as a separate manual field.
+// ============================================================================
+// FIXED: Annualized Claims Calculation
+// NEW FORMULA: (Claims Paid × 1.04) × 365 / Policy Completed Days
+// NO LONGER includes Outstanding from status data
+// ============================================================================
 const computeAnnualizedClaims = (claimsPaid, completedDays) => {
   const claimsIncurred = Number(claimsPaid) || 0;
   const ibnr = claimsIncurred * 0.04;
@@ -1660,6 +1658,10 @@ const MISConverterTool = () => {
       const workbook = XLSX.read(fileData, { type: 'array', cellDates: true });
       const worksheetName = pickSheetForInsurer(workbook, selectedInsurer);
       const worksheet = workbook.Sheets[worksheetName];
+      
+      // ========================================
+      // FIX: DEFINE sourceData (was missing!)
+      // ========================================
       const sourceData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
       if (sourceData.length === 0) {
@@ -2449,7 +2451,13 @@ const MISConverterTool = () => {
         {step === 'dashboard' && insightsRows && (() => {
           const a = getDashboardAnalytics(insightsRows);
           const lr = computeLossRatio({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate });
+          // ========================================
+          // FIX: Updated function call (removed statusValueSums)
+          // ========================================
           const annualized = computeAnnualizedClaims(claimsPaid, lr.completedDays);
+          // ========================================
+          // FIX: Currency formatter with 2 decimals
+          // ========================================
           const fmtCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
           const fmtPct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
           const fmtDays = (v) => (v === null || v === undefined ? '—' : `${v} days`);
@@ -2547,8 +2555,7 @@ const MISConverterTool = () => {
                   </div>
                 </div>
 
-                {/* Annualized claims — Claims Paid + O/S (from claim status data)
-                    + 4% IBNR = Total Claims, annualized over the full policy year */}
+                {/* Annualized claims — NOW FIXED */}
                 <div style={styles.statGroupBox} data-pdf-block="true">
                   <div style={styles.statGroupTitle}>Annualized claims</div>
                   <div style={styles.statsStrip}>
@@ -2570,6 +2577,7 @@ const MISConverterTool = () => {
                     </div>
                   </div>
                 </div>
+
                 {/* Status by count */}
                 <div style={styles.statGroupBox} data-pdf-block="true">
                   <div style={styles.statGroupTitle}>Status by count</div>
