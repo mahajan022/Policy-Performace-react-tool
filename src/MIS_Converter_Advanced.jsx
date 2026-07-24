@@ -61,17 +61,17 @@ const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 const ageFromDob = (value) => {
   if (!(value instanceof Date) || isNaN(value.getTime())) return value;
   const today = new Date();
-  let age = today.getFullYear() - value.getFullYear();
-  const monthDiff = today.getMonth() - value.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < value.getDate())) age--;
+  let age = today.getUTCFullYear() - value.getUTCFullYear();
+  const monthDiff = today.getUTCMonth() - value.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < value.getUTCDate())) age--;
   return age;
 };
 
 const formatDateValue = (value) => {
   if (!(value instanceof Date) || isNaN(value.getTime())) return value;
-  const dd = String(value.getDate()).padStart(2, '0');
-  const mmm = MONTH_ABBR[value.getMonth()];
-  return `${dd}-${mmm}-${value.getFullYear()}`;
+  const dd = String(value.getUTCDate()).padStart(2, '0');
+  const mmm = MONTH_ABBR[value.getUTCMonth()];
+  return `${dd}-${mmm}-${value.getUTCFullYear()}`;
 };
 
 // ---- State-name normalization for the India claims map ----
