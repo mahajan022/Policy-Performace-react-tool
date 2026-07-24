@@ -761,11 +761,6 @@ const bucketClaimNature = (disease, treatment, claimType1) => {
 // All standardized Status values (see statusMapping)
 const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Rejected', 'Settled', 'Withdrawn'];
 
-// Statuses that count as "outstanding" (O/S) — claims still moving through
-// the pipeline, i.e. not yet Settled, Rejected, or Withdrawn. Used only for
-// the annualized-claims estimate below.
-const OUTSTANDING_STATUSES = ['In Process', 'Under Query', 'Approved'];
-
 // Groups converted rows into everything the dashboard needs
 // FIXED: Now counts FDR/LDR for ALL claims, not just reimbursement
 const getDashboardAnalytics = (rows) => {
