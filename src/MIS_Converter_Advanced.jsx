@@ -2360,7 +2360,7 @@ const MISConverterTool = () => {
                       />
                     </div>
                     <div style={styles.fieldGroup}>
-                      <label style={styles.fieldLabel}>Claims paid (₹)</label>
+                      <label style={styles.fieldLabel}>Claims incurred( Paid + Outstanding) (₹)</label>
                       <input
                         type="number"
                         min="0"
@@ -2509,7 +2509,7 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalValue}>{fmtCurrency(lr.netPremium)}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>Claims paid</div>
+                    <div style={styles.policyTotalLabel}>Claims Incurred (Paid + Outstanding)</div>
                     <div style={styles.policyTotalValue}>{claimsPaid !== '' ? fmtCurrency(claimsPaid) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
