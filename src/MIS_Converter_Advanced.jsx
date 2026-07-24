@@ -501,7 +501,7 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 // differ slightly from the standard Healthysure template.
 const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
   const columns = rows && rows.length ? Object.keys(rows[0]) : [];
-  
+
   return (
     <div style={styles.chartModalOverlay} onClick={onClose}>
       <div style={styles.chartModalBox} onClick={e => e.stopPropagation()}>
@@ -949,13 +949,12 @@ const computeLossRatio = ({ inceptionPremium, endorsementPremium, claimsPaid, re
 //   Annualized Claims    = Total Claims x 365 / Policy completed days
 // NOTE: O/S is derived from the uploaded claims data's Status-wise values,
 // since it isn't collected as a separate manual field.
-const computeAnnualizedClaims = (statusValueSums, claimsPaid, completedDays) => {
-  const claims = Number(claimsPaid) || 0;
-  const outstanding = OUTSTANDING_STATUSES.reduce((sum, s) => sum + (statusValueSums?.[s] || 0), 0);
-  const ibnr = (claims + outstanding) * 0.04;
-  const totalClaims = claims + outstanding + ibnr;
+const computeAnnualizedClaims = (claimsPaid, completedDays) => {
+  const claimsIncurred = Number(claimsPaid) || 0;
+  const ibnr = claimsIncurred * 0.04;
+  const totalClaims = claimsIncurred + ibnr;
   const annualizedClaims = completedDays ? (totalClaims * 365) / completedDays : null;
-  return { outstanding, ibnr, totalClaims, annualizedClaims };
+  return { claimsIncurred, ibnr, totalClaims, annualizedClaims };
 };
 
 const MISConverterTool = () => {
@@ -1661,7 +1660,8 @@ const MISConverterTool = () => {
       const workbook = XLSX.read(fileData, { type: 'array', cellDates: true });
       const worksheetName = pickSheetForInsurer(workbook, selectedInsurer);
       const worksheet = workbook.Sheets[worksheetName];
-      const sourceData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+
 
       if (sourceData.length === 0) {
         throw new Error(`No data found in the "${worksheetName}" sheet of the uploaded file`);
@@ -2450,8 +2450,8 @@ const MISConverterTool = () => {
         {step === 'dashboard' && insightsRows && (() => {
           const a = getDashboardAnalytics(insightsRows);
           const lr = computeLossRatio({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate });
-          const annualized = computeAnnualizedClaims(a.statusValueSums, claimsPaid, lr.completedDays);
-          const fmtCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+          const annualized = computeAnnualizedClaims(claimsPaid, lr.completedDays);
+          const fmtCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
           const fmtPct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
           const fmtDays = (v) => (v === null || v === undefined ? '—' : `${v} days`);
           return (
@@ -2554,8 +2554,8 @@ const MISConverterTool = () => {
                   <div style={styles.statGroupTitle}>Annualized claims</div>
                   <div style={styles.statsStrip}>
                     <div style={styles.statBox}>
-                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.outstanding)}</div>
-                      <div style={styles.statLabel}>O/S (outstanding)</div>
+                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.claimsIncurred)}</div>
+                      <div style={styles.statLabel}>Claims incurred</div>
                     </div>
                     <div style={styles.statBox}>
                       <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.ibnr)}</div>
@@ -2563,7 +2563,7 @@ const MISConverterTool = () => {
                     </div>
                     <div style={styles.statBox}>
                       <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.totalClaims)}</div>
-                      <div style={styles.statLabel}>Total claims (incurred)</div>
+                      <div style={styles.statLabel}>Total claims</div>
                     </div>
                     <div style={styles.statBox}>
                       <div style={{ ...styles.statValue, fontSize: '15px' }}>{annualized.annualizedClaims !== null ? fmtCurrency(annualized.annualizedClaims) : '—'}</div>
@@ -2571,7 +2571,6 @@ const MISConverterTool = () => {
                     </div>
                   </div>
                 </div>
-
                 {/* Status by count */}
                 <div style={styles.statGroupBox} data-pdf-block="true">
                   <div style={styles.statGroupTitle}>Status by count</div>
