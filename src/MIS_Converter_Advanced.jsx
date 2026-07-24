@@ -501,6 +501,7 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 // differ slightly from the standard Healthysure template.
 const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
   const columns = rows && rows.length ? Object.keys(rows[0]) : [];
+  
   return (
     <div style={styles.chartModalOverlay} onClick={onClose}>
       <div style={styles.chartModalBox} onClick={e => e.stopPropagation()}>
