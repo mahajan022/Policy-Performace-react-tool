@@ -1660,8 +1660,7 @@ const MISConverterTool = () => {
       const workbook = XLSX.read(fileData, { type: 'array', cellDates: true });
       const worksheetName = pickSheetForInsurer(workbook, selectedInsurer);
       const worksheet = workbook.Sheets[worksheetName];
-
-
+      const sourceData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
       if (sourceData.length === 0) {
         throw new Error(`No data found in the "${worksheetName}" sheet of the uploaded file`);
