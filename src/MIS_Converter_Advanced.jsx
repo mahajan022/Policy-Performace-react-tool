@@ -767,14 +767,14 @@ const calculateDeductionPercentage = (rows) => {
   rows.forEach(row => {
     const claimed = Number(row['Claim Submitted']) || 0;
     const deduction = Number(row['Deduction Amt']) || 0;
-    
+
     if (claimed === 0) {
       buckets['0% (No Deduction)'] += 1;
       return;
     }
-    
+
     const percentage = (deduction / claimed) * 100;
-    
+
     if (percentage === 0) buckets['0% (No Deduction)'] += 1;
     else if (percentage <= 5) buckets['0-5%'] += 1;
     else if (percentage <= 10) buckets['5-10%'] += 1;
@@ -805,14 +805,14 @@ const calculateSIUtilization = (rows) => {
   rows.forEach(row => {
     const sumInsured = Number(row['Sum Insured']) || 0;
     const approved = Number(row['Claim Approved']) || 0;
-    
+
     if (sumInsured === 0) {
       buckets['0% (Not Used)'] += 1;
       return;
     }
-    
+
     const percentage = (approved / sumInsured) * 100;
-    
+
     if (percentage === 0) buckets['0% (Not Used)'] += 1;
     else if (percentage <= 20) buckets['0-20%'] += 1;
     else if (percentage <= 40) buckets['20-40%'] += 1;
@@ -854,7 +854,7 @@ const calculateReimbTAT = (rows) => {
     }
   });
 
-  const avgDischargeToLDR = dischargeToLDR.length > 0 
+  const avgDischargeToLDR = dischargeToLDR.length > 0
     ? Math.round(dischargeToLDR.reduce((a, b) => a + b) / dischargeToLDR.length)
     : 0;
 
@@ -874,16 +874,16 @@ const calculateReimbTAT = (rows) => {
 const computeAnnualizedClaims = (claimsPaid, completedDays, outstandingClaims = 0) => {
   // Claims Incurred = Claims Paid + Outstanding
   const claimsIncurred = (Number(claimsPaid) || 0) + (Number(outstandingClaims) || 0);
-  
+
   // IBNR = Claims Incurred × 4%
   const ibnr = claimsIncurred * 0.04;
-  
+
   // Total Claims = Claims Incurred + IBNR
   const totalClaims = claimsIncurred + ibnr;
-  
+
   // Annualized Claims = Total Claims × (365 / Policy Completed Days)
   const annualizedClaims = completedDays ? (totalClaims * 365) / completedDays : null;
-  
+
   return { claimsIncurred, ibnr, totalClaims, annualizedClaims };
 };
 
@@ -1073,9 +1073,10 @@ const MISConverterTool = () => {
   const [expiringLives, setExpiringLives] = useState('');
   const [insightsFieldsError, setInsightsFieldsError] = useState('');
 
-  // Deduction % chart: always shown on the dashboard. This checkbox (shown at the
-  // bottom of the dashboard, below the PDF button) only controls whether the chart
-  // is included when exporting the PDF.
+  // Deduction % chart: always shown on the dashboard, last in the grid. This checkbox
+  // (rendered directly below the "Download full dashboard as PDF" button) ONLY
+  // controls whether the chart is included when exporting the PDF — it never hides
+  // the chart in the live web tool.
   const [showDeductionAnalysis, setShowDeductionAnalysis] = useState(false);
   const deductionCardRef = useRef(null);
 
@@ -2528,7 +2529,7 @@ const MISConverterTool = () => {
           const a = getDashboardAnalytics(insightsRows);
           const lr = computeLossRatio({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate });
           const annualized = computeAnnualizedClaims(claimsPaid, lr.completedDays);
-          
+
           return (
             <div style={styles.card}>
               <div style={styles.section}>
@@ -2659,7 +2660,7 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* NEW: Reimbursement TAT (replacing FDR/LDR) */}
+                  {/* Reimbursement TAT */}
                   <ChartCard
                     title="Reimbursement TAT (Days)"
                     insightsRows={insightsRows}
@@ -2821,7 +2822,7 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* NEW: SI Utilization Chart — always shown, placed second-to-last */}
+                  {/* SI Utilization Chart — always shown, second-to-last */}
                   <ChartCard
                     title="Sum Insured Utilization %"
                     insightsRows={insightsRows}
@@ -2836,9 +2837,10 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* Deduction % Chart — always visible on the dashboard, placed last.
-                      Wrapped in a ref'd div so it can be temporarily hidden during PDF
-                      capture if the "include in PDF" checkbox below is unchecked. */}
+                  {/* Deduction % Chart — ALWAYS visible on the live dashboard, placed
+                      last in the grid. Wrapped in a ref'd div so it can be temporarily
+                      hidden (display: none) only during the PDF screenshot capture,
+                      based on the checkbox below the "Download PDF" button. */}
                   <div ref={deductionCardRef}>
                     <ChartCard
                       title="Deduction % Distribution"
@@ -2875,6 +2877,9 @@ const MISConverterTool = () => {
                 {pdfExporting ? 'Generating PDF…' : 'Download full dashboard as PDF'}
               </button>
 
+              {/* Checkbox sits directly below the PDF download button. It ONLY
+                  controls whether the Deduction % chart is included in the PDF —
+                  it never hides the chart in the live dashboard above. */}
               <label style={styles.deductionPdfCheckboxLabel}>
                 <input
                   type="checkbox"
@@ -2911,7 +2916,7 @@ const MISConverterTool = () => {
             <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
             <li>Dashboard covers: status by count/value, annualized claims, claim type, reimbursement TAT, age, relationship, disease, claim nature, rejections, and state/city claims labeled with each state's top city.</li>
             <li>SI Utilization chart always displays (second-to-last) to show percentage of sum insured used by claims.</li>
-            <li>Optional Deduction % chart (checkbox-controlled) shows distribution of deductions across claims — it appears last, and is only included in the PDF export when the checkbox is checked.</li>
+            <li>Deduction % chart always displays last on the dashboard. The checkbox below the "Download full dashboard as PDF" button only controls whether it's included in the exported PDF — it always shows in the web tool.</li>
             <li>Every chart card has a "view underlying data" icon — click it to see the raw rows for just the column(s) that chart depends on.</li>
             <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard.</li>
             <li>Click "Download full dashboard as PDF" to save the entire dashboard as a multi-page PDF file.</li>
@@ -3196,7 +3201,7 @@ const styles = {
     lineHeight: 1.15
   },
 
-  // UPDATED: 5-column grid for analytics
+  // 5-column grid for analytics
   policyTotalsStrip: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px', marginBottom: '16px' },
   policyTotalBox: {
     backgroundColor: COLORS.mint,
@@ -3269,6 +3274,19 @@ const styles = {
     minHeight: '180px', display: 'flex', alignItems: 'center'
   },
   dashboardGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '20px' },
+
+  // FIX: this style was referenced in JSX but never defined, which is why the
+  // checkbox below the "Download PDF" button wasn't showing up correctly.
+  deductionPdfCheckboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: '13px',
+    color: COLORS.textSecondary,
+    fontWeight: 600,
+    padding: '10px 4px 16px',
+    cursor: 'pointer'
+  },
 
   infoBox: { backgroundColor: COLORS.bgElevated, border: `1px solid ${COLORS.border}`, borderRadius: '10px', padding: '22px 24px', marginTop: '24px' },
   infoTitleRow: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' },
