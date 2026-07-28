@@ -15,11 +15,6 @@ import {
 
 // ============================================================================
 // DESIGN TOKENS — Healthysure brand
-// Zomp (teal-green) family drives 70-80% of surface/UI color; a small,
-// deliberately limited set of non-brand hues is reserved ONLY for functional
-// data semantics (rejected/warning states, and distinguishing many-category
-// chart legends) where relying on green-only would make claims data
-// impossible to read at a glance.
 // ============================================================================
 const COLORS = {
   bg: '#f4faf9',
@@ -39,15 +34,8 @@ const COLORS = {
   warning: '#9a6b00'
 };
 
-// Brand palette reused across all dashboard charts — teal family leads,
-// a few muted, low-saturation accents fill out the remaining categories
-// so an 8-slice legend stays legible.
 const CHART_COLORS = ['#11a387', '#095244', '#5C6BC0', '#c98a5c', '#0c725f', '#EF5350', '#7ea3c9', '#8D6E63'];
 
-// Healthysure output columns that hold dates. Source files read with
-// { cellDates: true } turn these into real JS Date objects instead of raw
-// Excel serial numbers (e.g. 46149) - formatDateValue below then renders
-// them as readable text (dd-mmm-yyyy) in the converted file.
 const DATE_COLUMNS = new Set([
   'Date of Admission', 'Date of Discharge', 'FDR - HS', 'FDR', 'LDR',
   'Date of Rejection', 'Date of Settlement'
@@ -55,9 +43,57 @@ const DATE_COLUMNS = new Set([
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// Every insurer except HDFC ERGO reports a raw age number in the "dob / age"
-// column; HDFC reports an actual date of birth (CLM_PATIENT_DOB), so we
-// convert that one case to an age here to keep the output column consistent.
+// ============================================================================
+// UPDATED: NUMBER FORMATTING - NO DECIMALS, INDIAN STYLE
+// ============================================================================
+const fmtCurrency = (v) => {
+  const num = Number(v || 0);
+  return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+};
+
+const fmtPct = (v) => {
+  return v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`;
+};
+
+const fmtDays = (v) => {
+  return v === null || v === undefined ? '—' : `${Math.round(v)} days`;
+};
+
+const fmtNumber = (v) => {
+  return Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+};
+
+// ============================================================================
+// NEW: LEAP YEAR & DATE HANDLING
+// ============================================================================
+const isLeapYear = (year) => (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+
+const getDaysInYear = (date) => {
+  const year = new Date(date).getUTCFullYear();
+  return isLeapYear(year) ? 366 : 365;
+};
+
+const addDays = (dateString, days) => {
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setUTCDate(date.getUTCDate() + days);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const subtractDays = (dateString, days) => {
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setUTCDate(date.getUTCDate() - days);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// ============================================================================
+// UPDATED: AGE FROM DOB & DATE FORMATTING
+// ============================================================================
 const ageFromDob = (value) => {
   if (!(value instanceof Date) || isNaN(value.getTime())) return value;
   const today = new Date();
@@ -74,9 +110,9 @@ const formatDateValue = (value) => {
   return `${dd}-${mmm}-${value.getUTCFullYear()}`;
 };
 
-// ---- State-name normalization for the India claims map ----
-// Insurer MIS files spell states inconsistently (old names, abbreviations, etc.)
-// so raw values are matched against @svg-maps/india's location list.
+// ============================================================================
+// STATE NAME NORMALIZATION FOR INDIA MAP
+// ============================================================================
 const INDIA_STATE_NAMES = indiaMap.locations.map(l => l.name);
 const STATE_NAME_ALIASES = {
   'nct of delhi': 'Delhi',
@@ -106,30 +142,21 @@ const normalizeStateName = (raw) => {
   return partial || null;
 };
 
-// Interpolates between a muted dark teal (low claim count, still readable on
-// the dark card) and a bright mint-accent (high claim count). A power curve
-// (exponent < 1) lifts up low counts so a state with just 1-2 claims still
-// reads as visibly colored instead of fading into the card background.
 const colorForCount = (count, max) => {
-  if (!count) return '#e3ece9'; // no data for this state, still visible on the pale chart card
+  if (!count) return '#e3ece9';
   const linearRatio = Math.min(1, count / (max || 1));
-  const ratio = Math.pow(linearRatio, 0.5); // boosts low values without blowing out high ones
-  const from = [190, 226, 218]; // pale teal tint, clearly visible on a white card
-  const to = [9, 82, 68];       // deep brand green
+  const ratio = Math.pow(linearRatio, 0.5);
+  const from = [190, 226, 218];
+  const to = [9, 82, 68];
   const rgb = from.map((c, i) => Math.round(c + (to[i] - c) * ratio));
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 };
 
-// Layout constants for the leader-line callout labels
 const CALLOUT_BOX_WIDTH = 200;
 const CALLOUT_BOX_HEIGHT = 40;
 const CALLOUT_MIN_GAP = 46;
 const CALLOUT_SIDE_PADDING = 320;
 
-// Stacks a column of callouts vertically near each state's natural (centroid)
-// height, nudging any that are too close together apart so labels never
-// overlap. If the stack overflows the map's height, it's shifted back up
-// and re-spaced from the bottom.
 const layoutCalloutColumn = (items, viewHeight) => {
   if (items.length === 0) return [];
   const placed = [...items]
@@ -154,13 +181,11 @@ const layoutCalloutColumn = (items, viewHeight) => {
   return placed;
 };
 
-// Interactive choropleth of claim volume by state. Every state with at least
-// one claim gets a permanent leader-line callout (name + count) placed in a
-// column to the left or right of the map, instead of cramped text on the
-// shape itself. Callouts are labeled with the state's top city instead of
-// the state name (color/count still reflect the whole state).
+// ============================================================================
+// INDIA CLAIMS MAP
+// ============================================================================
 const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height = 340 }) => {
-  const [hovered, setHovered] = useState(null); // { id, name, count }
+  const [hovered, setHovered] = useState(null);
   const [centroids, setCentroids] = useState({});
   const pathRefs = useRef({});
   const max = Math.max(1, ...Object.values(stateCounts), 0);
@@ -178,8 +203,6 @@ const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height
     setCentroids(next);
   }, []);
 
-  // Render the hovered state last so its "pop out" scale sits above its
-  // neighbors instead of being clipped underneath them.
   const orderedLocations = React.useMemo(() => {
     if (!hovered) return indiaMap.locations;
     const idx = indiaMap.locations.findIndex(l => l.id === hovered.id);
@@ -190,9 +213,6 @@ const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height
     return arr;
   }, [hovered]);
 
-  // One callout per state with claims, split left/right of the map's center
-  // so leader lines stay short and don't criss-cross the whole country.
-  // Callouts use the state's top city name instead of the state name.
   const callouts = React.useMemo(() => {
     const mapCenterX = vbX + vbW / 2;
     const items = indiaMap.locations
@@ -246,7 +266,6 @@ const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height
           );
         })}
 
-        {/* Leader lines + permanent callout labels for every state with at least one claim */}
         {callouts.map(c => {
           const elbowX = c.side === 'right' ? rightElbowX : leftElbowX;
           const labelAnchorX = c.side === 'right' ? elbowX + 14 : elbowX - 14;
@@ -299,7 +318,6 @@ const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height
           : `${callouts.length} state${callouts.length === 1 ? '' : 's'} with claims`}
       </div>
 
-      {/* Simple light-to-dark legend so the color scale reads clearly at a glance */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8 }}>
         <span style={{ fontSize: 10.5, color: COLORS.textMuted, fontWeight: 600 }}>Fewer claims</span>
         <div style={{
@@ -319,9 +337,9 @@ const IndiaClaimsMap = ({ stateCounts, stateTopCity = {}, unmatchedCount, height
   );
 };
 
-// Custom "active shape" renderer for pie slices: on hover, the slice grows
-// outward and gets a thin outer ring, giving a "pop out / separation" effect
-// without the jank of trying to physically offset the slice from center.
+// ============================================================================
+// PIE CHART WITH HOVER
+// ============================================================================
 const renderActivePieSlice = (props) => {
   const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
   return (
@@ -349,8 +367,6 @@ const renderActivePieSlice = (props) => {
   );
 };
 
-// Pie chart with hover pop-out behavior. Wrapped in its own component (rather
-// than an inline PieChart) so it can hold its own activeIndex state via hooks.
 const PopOutPieChart = ({ data, height, isRatio = false }) => {
   const [activeIndex, setActiveIndex] = useState(-1);
   return (
@@ -365,10 +381,8 @@ const PopOutPieChart = ({ data, height, isRatio = false }) => {
           outerRadius={Math.min(height, 260) * 0.35}
           label={({ name, value }) => {
             if (isRatio) {
-              // For ratio chart, show as percentage (value is already a %)
               return `${name}: ${value}%`;
             }
-            // For value charts, show just the count without percentage
             return `${name}: ${value}`;
           }}
           activeIndex={activeIndex}
@@ -387,22 +401,17 @@ const PopOutPieChart = ({ data, height, isRatio = false }) => {
   );
 };
 
-// Shortens long category names for axis ticks; full text still shows in the tooltip
 const truncateLabel = (str, maxLen = 16) => {
   const text = String(str || '');
   return text.length > maxLen ? `${text.slice(0, maxLen - 1).trim()}…` : text;
 };
 
-// Custom tick renderer for horizontal bar charts: truncates long y-axis labels
-// instead of letting them wrap into multiple lines and collide with the bars
 const TruncatedYAxisTick = ({ x, y, payload }) => (
   <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill={COLORS.textSecondary}>
     {truncateLabel(payload.value, 22)}
   </text>
 );
 
-// Shared tooltip for bar charts with long category names: wraps to a fixed
-// width instead of stretching a single line across (and out of) the chart card
 const WrappedBarTooltip = ({ active, payload, color = COLORS.accent }) => {
   if (!active || !payload || !payload.length) return null;
   const { name, value } = payload[0].payload;
@@ -426,15 +435,15 @@ const WrappedBarTooltip = ({ active, payload, color = COLORS.accent }) => {
   );
 };
 
-// Copies a DOM node to the clipboard as a PNG image (falls back to a file
-// download if the browser doesn't support ClipboardItem, e.g. some Safari
-// versions or non-HTTPS contexts). Returns 'done' or 'error'.
+// ============================================================================
+// COPY AS IMAGE FUNCTIONALITY
+// ============================================================================
 const copyNodeAsImage = async (node, filenameBase, background = COLORS.surface) => {
   if (!node) return 'error';
   try {
     const blob = await toBlob(node, {
       backgroundColor: background,
-      pixelRatio: 2, // retina-quality output
+      pixelRatio: 2,
       cacheBust: true
     });
     if (!blob) throw new Error('Blob generation failed');
@@ -446,7 +455,6 @@ const copyNodeAsImage = async (node, filenameBase, background = COLORS.surface) 
       return 'done';
     }
 
-    // Fallback for browsers without image-clipboard support: trigger a download instead
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -462,10 +470,8 @@ const copyNodeAsImage = async (node, filenameBase, background = COLORS.surface) 
   }
 };
 
-// Small icon button used for the copy-as-image action; shows a transient
-// state (copying / done / error) so the user gets feedback on click
 const CopyImageButton = ({ getNode, filenameBase, background }) => {
-  const [state, setState] = useState('idle'); // idle | copying | done | error
+  const [state, setState] = useState('idle');
 
   const handleClick = async (e) => {
     e.stopPropagation();
@@ -493,12 +499,9 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
   );
 };
 
-// Generic modal that shows the raw rows of the final uploaded Excel file
-// (the same file the whole insights dashboard is built from) so anyone
-// looking at a chart can immediately verify the numbers against source data.
-// Columns are read directly off the row objects rather than a fixed list,
-// since the uploaded "final" file may have been edited and its columns can
-// differ slightly from the standard Healthysure template.
+// ============================================================================
+// UNDERLYING DATA MODAL
+// ============================================================================
 const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
   const columns = rows && rows.length ? Object.keys(rows[0]) : [];
   
@@ -547,20 +550,9 @@ const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
   );
 };
 
-// Wraps a chart with a title bar + view-data + copy + zoom buttons; clicking
-// zoom pops the same chart out into a larger centered modal (re-rendered at
-// modal height via renderChart). Both the inline card and the modal have
-// their own "copy as image" button, each capturing exactly what's on screen
-// at that moment. "View underlying data" opens a table of the raw rows from
-// the uploaded final Excel file that the whole dashboard (and this chart)
-// was built from, so numbers can always be checked against source data.
-//
-// NOTE ON `data-pdf-block="true"`:
-// This marks the outer card as an "unsplittable" unit for the dashboard PDF
-// export. handleDownloadDashboardPDF (below) scans the DOM for every element
-// with this attribute and refuses to slice a PDF page in the middle of one -
-// it pushes the whole card to the next page instead, unless the card alone
-// is taller than a full page (in which case it must split).
+// ============================================================================
+// CHART CARD WRAPPER
+// ============================================================================
 const ChartCard = ({ title, renderChart, height = 260, note, wide = false, insightsRows, insightsFileName }) => {
   const [zoomed, setZoomed] = useState(false);
   const [showData, setShowData] = useState(false);
@@ -653,7 +645,9 @@ const ChartCard = ({ title, renderChart, height = 260, note, wide = false, insig
   );
 };
 
-// Age brackets for the Age-wise Split chart, checked in order
+// ============================================================================
+// AGE BRACKETS & BUCKETING
+// ============================================================================
 const AGE_BRACKETS = [
   { label: '0-18', min: 0, max: 18 },
   { label: '19-30', min: 19, max: 30 },
@@ -669,10 +663,6 @@ const bucketAge = (value) => {
   return bracket ? bracket.label : 'Unknown';
 };
 
-// Groups raw relation values into 3 broad buckets for the Relationship-wise
-// split chart — Spouse / Children / Parent. "Self" is kept separate since
-// it means the employee's own claim, not a dependent relation; anything
-// else unrecognized falls into "Other".
 const RELATION_KEYWORDS = {
   Self: ['self'],
   Spouse: ['spouse', 'wife', 'husband'],
@@ -690,10 +680,9 @@ const bucketRelation = (raw) => {
   return 'Other';
 };
 
-// The four stages of the pipeline. This genuinely is a linear process — a
-// file has to be uploaded, converted, then re-uploaded with edits before
-// insights can be built — so a numbered stepper encodes real information
-// (what's done, what's next), not decoration.
+// ============================================================================
+// STEPPER
+// ============================================================================
 const STEP_META = {
   select: { num: 1, label: 'Upload File' },
   convert: { num: 2, label: 'Convert' },
@@ -708,10 +697,6 @@ const STEP_ORDER = [
   { num: 4, label: 'Insights' }
 ];
 
-// Persistent progress spine shown above every step's card. Replaces the
-// old per-step colored badge: a single always-visible stepper communicates
-// where the user is in the four-stage pipeline at all times, not just on
-// the current screen.
 const Stepper = ({ step }) => {
   const current = STEP_META[step]?.num || 1;
   return (
@@ -743,9 +728,9 @@ const Stepper = ({ step }) => {
   );
 };
 
-// Keyword buckets for the Claim Nature chart (Maternity / Injury / Illness).
-// Anything not clearly maternity- or injury-related defaults to Illness,
-// since that's the overwhelming majority of health claims.
+// ============================================================================
+// CLAIM NATURE BUCKETING
+// ============================================================================
 const NATURE_KEYWORDS = {
   Maternity: ['matern', 'pregnan', 'deliver', 'obstetric', 'lscs', 'caesar', 'cesar'],
   Injury: ['injury', 'injuries', 'accident', 'trauma', 'fracture', 'burn', 'wound', 'poly trauma', 'rta']
@@ -758,11 +743,147 @@ const bucketClaimNature = (disease, treatment, claimType1) => {
   return 'Illness';
 };
 
-// All standardized Status values (see statusMapping)
 const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Rejected', 'Settled', 'Withdrawn'];
 
-// Groups converted rows into everything the dashboard needs
-// FIXED: Now counts FDR/LDR for ALL claims, not just reimbursement
+// ============================================================================
+// NEW: DEDUCTION % CALCULATION
+// ============================================================================
+const calculateDeductionPercentage = (rows) => {
+  const buckets = {
+    '0% (No Deduction)': 0,
+    '0-5%': 0,
+    '5-10%': 0,
+    '10-15%': 0,
+    '15-20%': 0,
+    '>20% (High)': 0
+  };
+
+  rows.forEach(row => {
+    const claimed = Number(row['Claim Submitted']) || 0;
+    const deduction = Number(row['Deduction Amt']) || 0;
+    
+    if (claimed === 0) {
+      buckets['0% (No Deduction)'] += 1;
+      return;
+    }
+    
+    const percentage = (deduction / claimed) * 100;
+    
+    if (percentage === 0) buckets['0% (No Deduction)'] += 1;
+    else if (percentage <= 5) buckets['0-5%'] += 1;
+    else if (percentage <= 10) buckets['5-10%'] += 1;
+    else if (percentage <= 15) buckets['10-15%'] += 1;
+    else if (percentage <= 20) buckets['15-20%'] += 1;
+    else buckets['>20% (High)'] += 1;
+  });
+
+  return Object.entries(buckets)
+    .filter(([_, count]) => count > 0)
+    .map(([name, value]) => ({ name, value }));
+};
+
+// ============================================================================
+// NEW: SI UTILIZATION CALCULATION
+// ============================================================================
+const calculateSIUtilization = (rows) => {
+  const buckets = {
+    '0% (Not Used)': 0,
+    '0-20%': 0,
+    '20-40%': 0,
+    '40-60%': 0,
+    '60-80%': 0,
+    '80-99%': 0,
+    '100%+ (Exceeded)': 0
+  };
+
+  rows.forEach(row => {
+    const sumInsured = Number(row['Sum Insured']) || 0;
+    const approved = Number(row['Claim Approved']) || 0;
+    
+    if (sumInsured === 0) {
+      buckets['0% (Not Used)'] += 1;
+      return;
+    }
+    
+    const percentage = (approved / sumInsured) * 100;
+    
+    if (percentage === 0) buckets['0% (Not Used)'] += 1;
+    else if (percentage <= 20) buckets['0-20%'] += 1;
+    else if (percentage <= 40) buckets['20-40%'] += 1;
+    else if (percentage <= 60) buckets['40-60%'] += 1;
+    else if (percentage <= 80) buckets['60-80%'] += 1;
+    else if (percentage < 100) buckets['80-99%'] += 1;
+    else buckets['100%+ (Exceeded)'] += 1;
+  });
+
+  return Object.entries(buckets)
+    .filter(([_, count]) => count > 0)
+    .map(([name, value]) => ({ name, value }));
+};
+
+// ============================================================================
+// NEW: REIMBURSEMENT TAT CALCULATION
+// ============================================================================
+const calculateReimbTAT = (rows) => {
+  const dischargeToLDR = [];
+  const ldrToSettlement = [];
+
+  rows.forEach(row => {
+    const dischargeDate = row['Date of Discharge'];
+    const ldrDate = row['LDR'];
+    const settlementDate = row['Date of Settlement'];
+
+    if (dischargeDate && ldrDate) {
+      const d1 = new Date(dischargeDate);
+      const d2 = new Date(ldrDate);
+      const days = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+      if (days >= 0) dischargeToLDR.push(days);
+    }
+
+    if (ldrDate && settlementDate) {
+      const d1 = new Date(ldrDate);
+      const d2 = new Date(settlementDate);
+      const days = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+      if (days >= 0) ldrToSettlement.push(days);
+    }
+  });
+
+  const avgDischargeToLDR = dischargeToLDR.length > 0 
+    ? Math.round(dischargeToLDR.reduce((a, b) => a + b) / dischargeToLDR.length)
+    : 0;
+
+  const avgLDRToSettlement = ldrToSettlement.length > 0
+    ? Math.round(ldrToSettlement.reduce((a, b) => a + b) / ldrToSettlement.length)
+    : 0;
+
+  return [
+    { name: 'Discharge to LDR', value: avgDischargeToLDR },
+    { name: 'LDR to Settlement', value: avgLDRToSettlement }
+  ];
+};
+
+// ============================================================================
+// UPDATED: ANNUALIZED CLAIMS FORMULA
+// ============================================================================
+const computeAnnualizedClaims = (claimsPaid, completedDays, outstandingClaims = 0) => {
+  // Claims Incurred = Claims Paid + Outstanding
+  const claimsIncurred = (Number(claimsPaid) || 0) + (Number(outstandingClaims) || 0);
+  
+  // IBNR = Claims Incurred × 4%
+  const ibnr = claimsIncurred * 0.04;
+  
+  // Total Claims = Claims Incurred + IBNR
+  const totalClaims = claimsIncurred + ibnr;
+  
+  // Annualized Claims = Total Claims × (365 / Policy Completed Days)
+  const annualizedClaims = completedDays ? (totalClaims * 365) / completedDays : null;
+  
+  return { claimsIncurred, ibnr, totalClaims, annualizedClaims };
+};
+
+// ============================================================================
+// UPDATED: GET DASHBOARD ANALYTICS
+// ============================================================================
 const getDashboardAnalytics = (rows) => {
   const claimTypeCounts = { Cashless: 0, Reimbursement: 0, Other: 0 };
   const relationCounts = {};
@@ -773,36 +894,23 @@ const getDashboardAnalytics = (rows) => {
   const cityCounts = {};
   const stateCityCounts = {};
   const claimNatureCounts = { Maternity: 0, Injury: 0, Illness: 0 };
-  // Standardized Status values, tracked both by claim count and by total
-  // claimed value (₹) so the dashboard can show "Status by count" and
-  // "Status by value" side by side.
   const statusCounts = Object.fromEntries(ALL_STATUSES.map(s => [s, 0]));
   const statusValueSums = Object.fromEntries(ALL_STATUSES.map(s => [s, 0]));
   let unmatchedStateCount = 0;
-  let totalClaimsWithFDR = 0;
-  let totalClaimsWithLDR = 0;
 
   rows.forEach(row => {
-    // 1. Cashless vs Reimbursement
     const claimTypeRaw = String(row['Claim Type'] || '').toLowerCase();
     let bucket = 'Other';
     if (claimTypeRaw.includes('cashless')) bucket = 'Cashless';
     else if (claimTypeRaw.includes('reimburs')) bucket = 'Reimbursement';
     claimTypeCounts[bucket] += 1;
 
-    // FIX: Count FDR/LDR for ALL claims (not just reimbursement)
-    if (row['FDR']) totalClaimsWithFDR += 1;
-    if (row['LDR']) totalClaimsWithLDR += 1;
-
-    // 4. Relationship-wise split — use bucketRelation to consolidate
     const relation = bucketRelation(row['benef_relation']);
     relationCounts[relation] = (relationCounts[relation] || 0) + 1;
 
-    // Age-wise split
     const ageBucket = bucketAge(row['dob / age']);
     ageCounts[ageBucket] = (ageCounts[ageBucket] || 0) + 1;
 
-    // 5a. Claims by state (kept for reference / possible future use)
     const stateName = normalizeStateName(row['State']);
     if (stateName) {
       stateCounts[stateName] = (stateCounts[stateName] || 0) + 1;
@@ -810,8 +918,6 @@ const getDashboardAnalytics = (rows) => {
       unmatchedStateCount += 1;
     }
 
-    // 5b. Claims by city — also tracked per-state so the India map can
-    // label each state with its top city instead of the state name.
     const cityName = String(row['City'] || '').trim();
     if (cityName) {
       cityCounts[cityName] = (cityCounts[cityName] || 0) + 1;
@@ -821,21 +927,17 @@ const getDashboardAnalytics = (rows) => {
       }
     }
 
-    // 6. Rejected claims reasons
     if (String(row['Status'] || '').toLowerCase() === 'rejected') {
       const reason = String(row['Remark-Rejection'] || '').trim() || 'Unspecified';
       rejectionReasonCounts[reason] = (rejectionReasonCounts[reason] || 0) + 1;
     }
 
-    // 7. Disease-wise split
     const disease = String(row['Disease Category'] || '').trim() || 'Unspecified';
     diseaseCounts[disease] = (diseaseCounts[disease] || 0) + 1;
 
-    // 7b. Claim nature — Maternity / Injury / Illness
     const nature = bucketClaimNature(row['Disease Category'], row['Treatment'], row['Claim Type 1']);
     claimNatureCounts[nature] += 1;
 
-    // 8. Status split — by count AND by value (sum of Claim Submitted ₹)
     const statusVal = String(row['Status'] || '').trim();
     if (Object.prototype.hasOwnProperty.call(statusCounts, statusVal)) {
       statusCounts[statusVal] += 1;
@@ -849,8 +951,6 @@ const getDashboardAnalytics = (rows) => {
     return (limit ? sorted.slice(0, limit) : sorted).map(([name, value]) => ({ name, value }));
   };
 
-  // Cashless vs Reimbursement RATIO as a pie (percentage split, "Other"/blank
-  // claim types excluded so the two slices always add up to 100%).
   const ratioBase = claimTypeCounts.Cashless + claimTypeCounts.Reimbursement;
   const cashlessPct = ratioBase ? Math.round((claimTypeCounts.Cashless / ratioBase) * 100) : 0;
   const reimbursementPct = ratioBase ? 100 - cashlessPct : 0;
@@ -860,11 +960,6 @@ const getDashboardAnalytics = (rows) => {
     cashlessReimbRatioPie: [
       { name: 'Cashless', value: cashlessPct },
       { name: 'Reimbursement', value: reimbursementPct }
-    ],
-    documentReceiptData: [
-      { name: 'FDR Received', value: totalClaimsWithFDR },
-      { name: 'LDR Received', value: totalClaimsWithLDR },
-      { name: 'Total Claims', value: rows.length }
     ],
     relationData: toChartData(relationCounts),
     ageData: [...AGE_BRACKETS.map(b => b.label), 'Unknown']
@@ -883,12 +978,16 @@ const getDashboardAnalytics = (rows) => {
     diseaseData: toChartData(diseaseCounts, 8),
     claimNatureData: toChartData(claimNatureCounts),
     statusCounts,
-    statusValueSums
+    statusValueSums,
+    deductionPercentageData: calculateDeductionPercentage(rows),
+    siUtilizationData: calculateSIUtilization(rows),
+    reimbTATData: calculateReimbTAT(rows)
   };
 };
 
-// Converts a value from an <input type="date"> ("YYYY-MM-DD") into a Date
-// object anchored at local midnight; returns null for empty/invalid input.
+// ============================================================================
+// PARSE DATE INPUT
+// ============================================================================
 const parseDateInput = (value) => {
   if (!value) return null;
   const d = new Date(`${value}T00:00:00`);
@@ -897,17 +996,9 @@ const parseDateInput = (value) => {
 
 const daysBetween = (later, earlier) => Math.round((later - earlier) / (1000 * 60 * 60 * 24));
 
-// Loss-ratio / earned-premium math, following the Summary-sheet layout the
-// team already uses:
-//   Net Premium      = Inception Premium + Endorsement Premium
-//   Policy completed = (report date - policy start date + 1)   [if a start date was given]
-//                      OR 365 - (policy end date - report date) [if only an end date was given]
-//   Balance days     = 365 - Policy completed days
-//   Earned Premium   = Net Premium / 365 * Policy completed days
-//   LR (without IBNR)= Claims Paid / Earned Premium
-//   LR (with IBNR)   = LR (without IBNR) + 4%
-// Only ONE of policy start date / policy end date is required — whichever
-// the user provides.
+// ============================================================================
+// LOSS RATIO CALCULATION
+// ============================================================================
 const computeLossRatio = ({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate }) => {
   const netPremium = (Number(inceptionPremium) || 0) + (Number(endorsementPremium) || 0);
   const claims = Number(claimsPaid) || 0;
@@ -938,20 +1029,10 @@ const computeLossRatio = ({ inceptionPremium, endorsementPremium, claimsPaid, re
 };
 
 // ============================================================================
-// FIXED: Annualized Claims Calculation
-// NEW FORMULA: (Claims Paid × 1.04) × 365 / Policy Completed Days
-// NO LONGER includes Outstanding from status data
+// MAIN COMPONENT
 // ============================================================================
-const computeAnnualizedClaims = (claimsPaid, completedDays) => {
-  const claimsIncurred = Number(claimsPaid) || 0;
-  const ibnr = claimsIncurred * 0.04;
-  const totalClaims = claimsIncurred + ibnr;
-  const annualizedClaims = completedDays ? (totalClaims * 365) / completedDays : null;
-  return { claimsIncurred, ibnr, totalClaims, annualizedClaims };
-};
-
 const MISConverterTool = () => {
-  const [step, setStep] = useState('select'); // select, convert, preview, upload-insights, dashboard
+  const [step, setStep] = useState('select');
   const [selectedInsurer, setSelectedInsurer] = useState('');
   const [autoDetected, setAutoDetected] = useState(false);
   const [detectedSheetName, setDetectedSheetName] = useState('');
@@ -967,18 +1048,12 @@ const MISConverterTool = () => {
   const [downloadedOnce, setDownloadedOnce] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Insights re-upload step: the dashboard is built from whatever file is
-  // uploaded here, NOT from convertedRows in memory - so if the team edits
-  // the downloaded file before generating insights, those edits are reflected.
   const [insightsFile, setInsightsFile] = useState(null);
   const [insightsRows, setInsightsRows] = useState(null);
   const [insightsError, setInsightsError] = useState('');
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsFileInputRef = useRef(null);
 
-  // Collected right after the final file is uploaded (Step 3), shown as
-  // widgets at the top of the dashboard (Step 4) rather than derived from
-  // the file itself.
   const [companyName, setCompanyName] = useState('');
   const [brokerName, setBrokerName] = useState('');
   const [policyYear, setPolicyYear] = useState('');
@@ -992,9 +1067,9 @@ const MISConverterTool = () => {
   const [expiringLives, setExpiringLives] = useState('');
   const [insightsFieldsError, setInsightsFieldsError] = useState('');
 
-  // Ref around the entire exportable dashboard region (header strip through
-  // the last chart) and a loading flag for the "Download full dashboard as
-  // PDF" action below.
+  // NEW: Deduction analysis checkbox
+  const [showDeductionAnalysis, setShowDeductionAnalysis] = useState(false);
+
   const dashboardExportRef = useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
 
@@ -1014,8 +1089,6 @@ const MISConverterTool = () => {
     "HDFC ERGO"
   ];
 
-  // Standard Healthysure column order (excludes calculated/TAT columns and Sr No,
-  // which are generated automatically rather than mapped from source)
   const healthysureColumns = [
     "Claim No",
     "Status",
@@ -1055,7 +1128,6 @@ const MISConverterTool = () => {
     "benef_relation"
   ];
 
-  // Insurer source-column -> Healthysure column, parsed from MIS_Mapping.xlsx
   const columnMapping = {
     "ABHI Inhouse": {
       "ABHI Claim No": "Claim No",
@@ -1653,10 +1725,6 @@ const MISConverterTool = () => {
       const workbook = XLSX.read(fileData, { type: 'array', cellDates: true });
       const worksheetName = pickSheetForInsurer(workbook, selectedInsurer);
       const worksheet = workbook.Sheets[worksheetName];
-      
-      // ========================================
-      // FIX: DEFINE sourceData (was missing!)
-      // ========================================
       const sourceData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
       if (sourceData.length === 0) {
@@ -1809,6 +1877,27 @@ const MISConverterTool = () => {
     }
   };
 
+  // NEW: EVENT HANDLERS FOR AUTO DATE FILL
+  const handlePolicyStartDateChange = (e) => {
+    const startDate = e.target.value;
+    setPolicyStartDate(startDate);
+    if (startDate) {
+      const daysInYear = getDaysInYear(startDate);
+      const autoEndDate = addDays(startDate, daysInYear);
+      setPolicyEndDate(autoEndDate);
+    }
+  };
+
+  const handlePolicyEndDateChange = (e) => {
+    const endDate = e.target.value;
+    setPolicyEndDate(endDate);
+    if (endDate) {
+      const daysInYear = getDaysInYear(endDate);
+      const autoStartDate = subtractDays(endDate, daysInYear);
+      setPolicyStartDate(autoStartDate);
+    }
+  };
+
   const handleViewInsights = () => {
     if (!insightsRows) {
       setInsightsFieldsError('Please upload the final Excel file first.');
@@ -1860,26 +1949,11 @@ const MISConverterTool = () => {
     setError('');
     setProgress(0);
     setDownloadedOnce(false);
+    setShowDeductionAnalysis(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (insightsFileInputRef.current) insightsFileInputRef.current.value = '';
   };
 
-  // Captures everything inside dashboardExportRef (company/policy header
-  // through the last chart) as a single tall canvas, then slices it into
-  // A4-sized pages and saves a multi-page PDF. Uses the exact on-screen
-  // rendering (colors, callouts, India map, etc.) so the PDF matches what
-  // the user sees.
-  //
-  // SMART PAGE-BREAKS: naive slicing (fixed pixel height per page) can cut
-  // a chart card, the India map, or a stats strip right in half, since it
-  // has no idea where "safe" cut points are. To fix this, every card /
-  // strip that shouldn't be split is marked with data-pdf-block="true" in
-  // the JSX (see ChartCard, policyMetaStrip, policyTotalsStrip, and both
-  // statGroupBox blocks below). Before slicing each page, we check whether
-  // the natural cut line falls inside one of those blocks; if it does, the
-  // cut is pulled back to the top of that block instead, pushing the whole
-  // block onto the next page. A block only gets split if it's taller than
-  // a full page on its own (no other option in that case).
   const handleDownloadDashboardPDF = async () => {
     const node = dashboardExportRef.current;
     if (!node) return;
@@ -1890,13 +1964,10 @@ const MISConverterTool = () => {
     try {
       const canvas = await toCanvas(node, {
         backgroundColor: COLORS.bgElevated,
-        pixelRatio: 2, // retina-quality capture
+        pixelRatio: 2,
         cacheBust: true
       });
 
-      // Map every "don't cut me" block's on-screen position into the
-      // captured canvas's pixel space, so we know which vertical ranges
-      // of the tall canvas must not be split by a page boundary.
       const nodeRect = node.getBoundingClientRect();
       const scaleX = nodeRect.width > 0 ? canvas.width / nodeRect.width : 1;
       const blocks = Array.from(node.querySelectorAll('[data-pdf-block]'))
@@ -1920,29 +1991,19 @@ const MISConverterTool = () => {
       let renderedHeight = 0;
       let firstPage = true;
 
-      // Slice the tall captured canvas into A4-sized chunks, one per PDF
-      // page, nudging each cut line above any block it would otherwise
-      // fall inside of.
       while (renderedHeight < canvas.height) {
         let sliceEnd = Math.min(renderedHeight + pageCanvasHeight, canvas.height);
 
-        // Does this natural cut line land inside a block we shouldn't split?
         const breaking = blocks.find(b => b.top < sliceEnd && sliceEnd < b.bottom);
         if (breaking && breaking.top > renderedHeight) {
           const blockHeight = breaking.bottom - breaking.top;
           if (blockHeight <= pageCanvasHeight) {
-            // Block fits on one page — pull the cut back to its top so the
-            // whole block moves to the next page instead of being split.
             sliceEnd = breaking.top;
           }
-          // else: block is taller than a full page, nothing we can do —
-          // let it split naturally, there's no alternative.
         }
 
         const sliceHeight = sliceEnd - renderedHeight;
         if (sliceHeight <= 0) {
-          // Safety net: avoid an infinite loop if something odd happens
-          // with block measurements — just take a full page's worth.
           sliceEnd = Math.min(renderedHeight + pageCanvasHeight, canvas.height);
         }
 
@@ -1985,7 +2046,7 @@ const MISConverterTool = () => {
           <div style={styles.brandRow}>
             <img src="/logo.jpeg" alt="Healthysure" style={styles.logo} />
             <div>
-              <h1 style={styles.title}>Performace Analytics Tool</h1>
+              <h1 style={styles.title}>Performance Analytics Tool</h1>
               <p style={styles.subtitle}>Insurer file standardization &amp; claims insights</p>
             </div>
           </div>
@@ -2360,7 +2421,7 @@ const MISConverterTool = () => {
                       />
                     </div>
                     <div style={styles.fieldGroup}>
-                      <label style={styles.fieldLabel}>Claims incurred( Paid + Outstanding) (₹)</label>
+                      <label style={styles.fieldLabel}>Claims incurred (Paid + Outstanding) (₹)</label>
                       <input
                         type="number"
                         min="0"
@@ -2386,7 +2447,7 @@ const MISConverterTool = () => {
                       <input
                         type="date"
                         value={policyStartDate}
-                        onChange={(e) => setPolicyStartDate(e.target.value)}
+                        onChange={handlePolicyStartDateChange}
                         className="mis-field"
                         style={styles.fieldInput}
                       />
@@ -2396,7 +2457,7 @@ const MISConverterTool = () => {
                       <input
                         type="date"
                         value={policyEndDate}
-                        onChange={(e) => setPolicyEndDate(e.target.value)}
+                        onChange={handlePolicyEndDateChange}
                         className="mis-field"
                         style={styles.fieldInput}
                       />
@@ -2425,6 +2486,29 @@ const MISConverterTool = () => {
                         style={styles.fieldInput}
                       />
                     </div>
+
+                    {/* NEW: Deduction checkbox */}
+                    <div style={{ ...styles.fieldGroup, gridColumn: '1 / -1', borderTop: `1px solid ${COLORS.border}`, paddingTop: '16px' }}>
+                      <label style={{ 
+                        ...styles.fieldLabel, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '8px', 
+                        cursor: 'pointer',
+                        textTransform: 'none',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: COLORS.textPrimary
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={showDeductionAnalysis}
+                          onChange={(e) => setShowDeductionAnalysis(e.target.checked)}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                        />
+                        <span>Include Deduction % analysis in dashboard &amp; PDF</span>
+                      </label>
+                    </div>
                   </div>
                   <button
                     onClick={handleViewInsights}
@@ -2446,16 +2530,8 @@ const MISConverterTool = () => {
         {step === 'dashboard' && insightsRows && (() => {
           const a = getDashboardAnalytics(insightsRows);
           const lr = computeLossRatio({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate });
-          // ========================================
-          // FIX: Updated function call (removed statusValueSums)
-          // ========================================
           const annualized = computeAnnualizedClaims(claimsPaid, lr.completedDays);
-          // ========================================
-          // FIX: Currency formatter with 2 decimals
-          // ========================================
-          const fmtCurrency = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          const fmtPct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
-          const fmtDays = (v) => (v === null || v === undefined ? '—' : `${v} days`);
+          
           return (
             <div style={styles.card}>
               <div style={styles.section}>
@@ -2470,11 +2546,6 @@ const MISConverterTool = () => {
                 )}
               </div>
 
-              {/* Everything from here through the end of dashboardGrid is what
-                  gets captured for the "Download full dashboard as PDF" button below.
-                  Elements marked data-pdf-block="true" are treated as unsplittable
-                  units by handleDownloadDashboardPDF — see that function's comment
-                  for details. */}
               <div ref={dashboardExportRef} style={{ backgroundColor: COLORS.bgElevated }}>
 
                 {/* Company / broker / policy year header strip */}
@@ -2493,8 +2564,7 @@ const MISConverterTool = () => {
                   </div>
                 </div>
 
-                {/* Policy-level totals entered on Step 3, plus Net Premium
-                    (calculated = Inception + Endorsement) - shown as widgets */}
+                {/* ROW 1: Policy Basics (5 items) */}
                 <div style={styles.policyTotalsStrip} data-pdf-block="true">
                   <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Inception premium</div>
@@ -2505,71 +2575,40 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalValue}>{endorsementPremium !== '' ? fmtCurrency(endorsementPremium) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>Net / Total premium</div>
-                    <div style={styles.policyTotalValue}>{fmtCurrency(lr.netPremium)}</div>
-                  </div>
-                  <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>Claims Incurred (Paid + Outstanding)</div>
-                    <div style={styles.policyTotalValue}>{claimsPaid !== '' ? fmtCurrency(claimsPaid) : '—'}</div>
-                  </div>
-                  <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Inception lives</div>
-                    <div style={styles.policyTotalValue}>{inceptionLives !== '' ? Number(inceptionLives).toLocaleString('en-IN') : '—'}</div>
+                    <div style={styles.policyTotalValue}>{inceptionLives !== '' ? fmtNumber(inceptionLives) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Current lives</div>
-                    <div style={styles.policyTotalValue}>{expiringLives !== '' ? Number(expiringLives).toLocaleString('en-IN') : '—'}</div>
+                    <div style={styles.policyTotalValue}>{expiringLives !== '' ? fmtNumber(expiringLives) : '—'}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Net / Total premium</div>
+                    <div style={styles.policyTotalValue}>{fmtCurrency(lr.netPremium)}</div>
                   </div>
                 </div>
 
-                {/* Loss ratio calculation — Policy completed/balance days, Earned
-                    Premium, and both Loss Ratios, all derived from the Step 3 inputs */}
-                <div style={styles.statGroupBox} data-pdf-block="true">
-                  <div style={styles.statGroupTitle}>Loss ratio calculation</div>
-                  <div style={styles.statsStrip}>
-                    <div style={styles.statBox}>
-                      <div style={styles.statValue}>{fmtDays(lr.completedDays)}</div>
-                      <div style={styles.statLabel}>Policy completed</div>
-                    </div>
-                    <div style={styles.statBox}>
-                      <div style={styles.statValue}>{fmtDays(lr.balanceDays)}</div>
-                      <div style={styles.statLabel}>Balance days</div>
-                    </div>
-                    <div style={styles.statBox}>
-                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{lr.earnedPremium !== null ? fmtCurrency(lr.earnedPremium) : '—'}</div>
-                      <div style={styles.statLabel}>Earned premium</div>
-                    </div>
-                    <div style={styles.statBox}>
-                      <div style={styles.statValue}>{fmtPct(lr.lossRatioWithoutIBNR)}</div>
-                      <div style={styles.statLabel}>Loss ratio (w/o IBNR)</div>
-                    </div>
-                    <div style={styles.statBox}>
-                      <div style={styles.statValue}>{fmtPct(lr.lossRatioWithIBNR)}</div>
-                      <div style={styles.statLabel}>Loss ratio (with IBNR)</div>
-                    </div>
+                {/* ROW 2: Loss Ratio Metrics (5 items) */}
+                <div style={styles.policyTotalsStrip} data-pdf-block="true">
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Policy completed</div>
+                    <div style={styles.policyTotalValue}>{fmtDays(lr.completedDays)}</div>
                   </div>
-                </div>
-
-                {/* Annualized claims — NOW FIXED */}
-                <div style={styles.statGroupBox} data-pdf-block="true">
-                  <div style={styles.statGroupTitle}>Annualized claims</div>
-                  <div style={styles.statsStrip}>
-                    <div style={styles.statBox}>
-                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.claimsIncurred)}</div>
-                      <div style={styles.statLabel}>Claims incurred</div>
-                    </div>
-                    <div style={styles.statBox}>
-                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.ibnr)}</div>
-                      <div style={styles.statLabel}>IBNR (4%)</div>
-                    </div>
-                    <div style={styles.statBox}>
-                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{fmtCurrency(annualized.totalClaims)}</div>
-                      <div style={styles.statLabel}>Total claims</div>
-                    </div>
-                    <div style={styles.statBox}>
-                      <div style={{ ...styles.statValue, fontSize: '15px' }}>{annualized.annualizedClaims !== null ? fmtCurrency(annualized.annualizedClaims) : '—'}</div>
-                      <div style={styles.statLabel}>Annualized claims</div>
-                    </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Balance days</div>
+                    <div style={styles.policyTotalValue}>{fmtDays(lr.balanceDays)}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Claims incurred (Paid + O/S)</div>
+                    <div style={styles.policyTotalValue}>{claimsPaid !== '' ? fmtCurrency(annualized.claimsIncurred) : '—'}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Annualized claims</div>
+                    <div style={styles.policyTotalValue}>{annualized.annualizedClaims !== null ? fmtCurrency(annualized.annualizedClaims) : '—'}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Loss ratio (with IBNR)</div>
+                    <div style={styles.policyTotalValue}>{fmtPct(lr.lossRatioWithIBNR)}</div>
                   </div>
                 </div>
 
@@ -2621,13 +2660,27 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* 2. Document Receipt (FDR vs LDR) — now a pie chart */}
+                  {/* NEW: Reimbursement TAT (replacing FDR/LDR) */}
                   <ChartCard
-                    title="Document receipt (FDR vs LDR)"
+                    title="Reimbursement TAT (Days)"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     renderChart={(h) => (
-                      <PopOutPieChart data={a.documentReceiptData} height={h} />
+                      a.reimbTATData && a.reimbTATData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={h}>
+                          <BarChart data={a.reimbTATData} margin={{ top: 24, right: 28, bottom: 5, left: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                            <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                            <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                            <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={COLORS.accent}>
+                              <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary, offset: 10 }} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>TAT data not available.</p></div>
+                      )
                     )}
                   />
 
@@ -2639,13 +2692,13 @@ const MISConverterTool = () => {
                     renderChart={(h) => (
                       a.ageData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={h}>
-                          <BarChart data={a.ageData}>
+                          <BarChart data={a.ageData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
                             <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
                             <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
                             <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
                             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                              <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                              <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary, offset: 10 }} />
                               {a.ageData.map((_, i) => (
                                 <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                               ))}
@@ -2668,7 +2721,7 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* 5. Claims by state — interactive India map, labeled with cities */}
+                  {/* 5. Claims by state — interactive India map */}
                   <ChartCard
                     title="Claims by state"
                     wide
@@ -2739,7 +2792,7 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* 7b. Claim nature — Maternity / Injury / Illness (below Disease-wise split) */}
+                  {/* 7b. Claim nature */}
                   <ChartCard
                     title="Claim nature: Maternity / Injury / Illness"
                     insightsRows={insightsRows}
@@ -2752,7 +2805,7 @@ const MISConverterTool = () => {
                           <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
                           <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
                           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                            <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                            <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary, offset: 10 }} />
                             {a.claimNatureData.map((_, i) => (
                               <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                             ))}
@@ -2762,11 +2815,39 @@ const MISConverterTool = () => {
                     )}
                   />
 
+                  {/* NEW: Deduction % Chart (conditional on checkbox) */}
+                  {showDeductionAnalysis && (
+                    <ChartCard
+                      title="Deduction % Distribution"
+                      insightsRows={insightsRows}
+                      insightsFileName={insightsFile?.name}
+                      renderChart={(h) => (
+                        a.deductionPercentageData && a.deductionPercentageData.length > 0 ? (
+                          <PopOutPieChart data={a.deductionPercentageData} height={h} />
+                        ) : (
+                          <div style={styles.noDataBox}><p style={{ margin: 0 }}>No deduction data found.</p></div>
+                        )
+                      )}
+                    />
+                  )}
+
+                  {/* NEW: SI Utilization Chart */}
+                  <ChartCard
+                    title="Sum Insured Utilization %"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
+                    renderChart={(h) => (
+                      a.siUtilizationData && a.siUtilizationData.length > 0 ? (
+                        <PopOutPieChart data={a.siUtilizationData} height={h} />
+                      ) : (
+                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>No SI utilization data found.</p></div>
+                      )
+                    )}
+                  />
+
                 </div>
               </div>
 
-              {/* Download full dashboard as PDF — captures everything inside
-                  dashboardExportRef above and saves it as a paginated A4 PDF. */}
               <button
                 onClick={handleDownloadDashboardPDF}
                 disabled={pdfExporting}
@@ -2808,11 +2889,12 @@ const MISConverterTool = () => {
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
             <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, broker, policy year, premiums, claims paid, dates, lives) to generate the insights dashboard.</li>
             <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
-            <li>Dashboard covers: status by count/value, loss ratio, annualized claims, claim type, document receipt (FDR/LDR), age, relationship (grouped as Parent/Children/Spouse), disease, claim nature (Maternity/Injury/Illness), rejections, and state/city claims labeled with each state's top city.</li>
-            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows of the uploaded final file that chart (and the whole dashboard) was built from.</li>
-            <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard, ready to paste into WhatsApp, Slack, or Word.</li>
-            <li>All pie charts now show percentages alongside counts for clearer data interpretation.</li>
-            <li>Click "Download full dashboard as PDF" on the insights step to save the entire dashboard — header, totals, and all charts — as a single PDF file.</li>
+            <li>Dashboard covers: status by count/value, annualized claims, claim type, reimbursement TAT, age, relationship, disease, claim nature, rejections, and state/city claims labeled with each state's top city.</li>
+            <li>Optional Deduction % chart shows distribution of deductions across claims (checkbox-controlled).</li>
+            <li>SI Utilization chart always displays to show percentage of sum insured used by claims.</li>
+            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows of the uploaded final file.</li>
+            <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard.</li>
+            <li>Click "Download full dashboard as PDF" to save the entire dashboard as a multi-page PDF file.</li>
           </ul>
         </div>
       </main>
@@ -2820,6 +2902,9 @@ const MISConverterTool = () => {
   );
 };
 
+// ============================================================================
+// STYLES - UPDATED WITH 5-COLUMN GRID
+// ============================================================================
 const styles = {
   interactionStyles: `
     .mis-btn {
@@ -3059,7 +3144,6 @@ const styles = {
 
   buttonGroup: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
 
-  fieldsRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
   fieldsRowWide: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' },
   fieldGroup: { display: 'flex', flexDirection: 'column', gap: '7px' },
   fieldLabel: { fontSize: '11.5px', fontWeight: 700, color: COLORS.textSecondary, textTransform: 'uppercase', letterSpacing: '0.4px' },
@@ -3092,7 +3176,8 @@ const styles = {
     lineHeight: 1.15
   },
 
-  policyTotalsStrip: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px', marginBottom: '16px' },
+  // UPDATED: 5-column grid for analytics
+  policyTotalsStrip: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px', marginBottom: '16px' },
   policyTotalBox: {
     backgroundColor: COLORS.mint,
     border: `1px solid ${COLORS.borderStrong}`, borderRadius: '10px',
