@@ -1073,8 +1073,11 @@ const MISConverterTool = () => {
   const [expiringLives, setExpiringLives] = useState('');
   const [insightsFieldsError, setInsightsFieldsError] = useState('');
 
-  // NEW: Deduction analysis checkbox
+  // Deduction % chart: always shown on the dashboard. This checkbox (shown at the
+  // bottom of the dashboard, below the PDF button) only controls whether the chart
+  // is included when exporting the PDF.
   const [showDeductionAnalysis, setShowDeductionAnalysis] = useState(false);
+  const deductionCardRef = useRef(null);
 
   const dashboardExportRef = useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
@@ -1967,6 +1970,14 @@ const MISConverterTool = () => {
     setPdfExporting(true);
     setError('');
 
+    // The Deduction % chart is always visible on-screen, but should only be part of
+    // the exported PDF when the "include in PDF" checkbox is checked. Since the PDF
+    // is a screenshot of the live DOM, we hide that one card just for the capture.
+    const shouldHideDeduction = !showDeductionAnalysis && deductionCardRef.current;
+    if (shouldHideDeduction) {
+      deductionCardRef.current.style.display = 'none';
+    }
+
     try {
       const canvas = await toCanvas(node, {
         backgroundColor: COLORS.bgElevated,
@@ -2040,6 +2051,9 @@ const MISConverterTool = () => {
       console.error('PDF export failed:', err);
       setError('Failed to generate the dashboard PDF. Please try again.');
     } finally {
+      if (shouldHideDeduction) {
+        deductionCardRef.current.style.display = '';
+      }
       setPdfExporting(false);
     }
   };
@@ -2492,29 +2506,6 @@ const MISConverterTool = () => {
                         style={styles.fieldInput}
                       />
                     </div>
-
-                    {/* NEW: Deduction checkbox */}
-                    <div style={{ ...styles.fieldGroup, gridColumn: '1 / -1', borderTop: `1px solid ${COLORS.border}`, paddingTop: '16px' }}>
-                      <label style={{ 
-                        ...styles.fieldLabel, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '8px', 
-                        cursor: 'pointer',
-                        textTransform: 'none',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        color: COLORS.textPrimary
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={showDeductionAnalysis}
-                          onChange={(e) => setShowDeductionAnalysis(e.target.checked)}
-                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                        />
-                        <span>Include Deduction % analysis in dashboard &amp; PDF</span>
-                      </label>
-                    </div>
                   </div>
                   <button
                     onClick={handleViewInsights}
@@ -2845,11 +2836,10 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* NEW: Deduction % Chart — conditional on checkbox, placed last.
-                      Because this card only renders into the DOM when showDeductionAnalysis is true,
-                      it is automatically included in (or excluded from) the PDF export as well —
-                      the PDF is generated from a screenshot of whatever is currently on screen. */}
-                  {showDeductionAnalysis && (
+                  {/* Deduction % Chart — always visible on the dashboard, placed last.
+                      Wrapped in a ref'd div so it can be temporarily hidden during PDF
+                      capture if the "include in PDF" checkbox below is unchecked. */}
+                  <div ref={deductionCardRef}>
                     <ChartCard
                       title="Deduction % Distribution"
                       insightsRows={insightsRows}
@@ -2863,7 +2853,7 @@ const MISConverterTool = () => {
                         )
                       )}
                     />
-                  )}
+                  </div>
 
                 </div>
               </div>
@@ -2884,6 +2874,16 @@ const MISConverterTool = () => {
                 <Download size={15} />
                 {pdfExporting ? 'Generating PDF…' : 'Download full dashboard as PDF'}
               </button>
+
+              <label style={styles.deductionPdfCheckboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={showDeductionAnalysis}
+                  onChange={(e) => setShowDeductionAnalysis(e.target.checked)}
+                  style={{ cursor: 'pointer', width: '16px', height: '16px', flexShrink: 0 }}
+                />
+                <span>Include the Deduction % chart in the downloaded PDF</span>
+              </label>
 
               <div style={styles.buttonGroup}>
                 <button onClick={() => setStep('upload-insights')} className="mis-btn mis-btn-secondary" style={{ ...styles.button, ...styles.buttonSecondary }}>
