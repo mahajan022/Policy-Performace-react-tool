@@ -502,9 +502,12 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 // ============================================================================
 // UNDERLYING DATA MODAL
 // ============================================================================
-const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
-  const columns = rows && rows.length ? Object.keys(rows[0]) : [];
-  
+const UnderlyingDataModal = ({ rows, fileName, onClose, columns: columnsOverride }) => {
+  const allColumns = rows && rows.length ? Object.keys(rows[0]) : [];
+  const columns = (columnsOverride && columnsOverride.length)
+    ? columnsOverride.filter(c => allColumns.includes(c))
+    : allColumns;
+
   return (
     <div style={styles.chartModalOverlay} onClick={onClose}>
       <div style={styles.chartModalBox} onClick={e => e.stopPropagation()}>
@@ -523,7 +526,9 @@ const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
           </button>
         </div>
         <p style={{ ...styles.previewNote, marginTop: 0, marginBottom: 10 }}>
-          {rows ? `${rows.length} row${rows.length === 1 ? '' : 's'} from the uploaded file used to build this dashboard.` : 'No data available.'}
+          {rows
+            ? `${rows.length} row${rows.length === 1 ? '' : 's'}${columnsOverride && columnsOverride.length ? ` — showing only the ${columns.length} column${columns.length === 1 ? '' : 's'} this chart depends on.` : ' from the uploaded file used to build this dashboard.'}`
+            : 'No data available.'}
         </p>
         <div style={styles.previewScroll}>
           <table style={styles.previewTable}>
@@ -553,7 +558,7 @@ const UnderlyingDataModal = ({ rows, fileName, onClose }) => {
 // ============================================================================
 // CHART CARD WRAPPER
 // ============================================================================
-const ChartCard = ({ title, renderChart, height = 260, note, wide = false, insightsRows, insightsFileName }) => {
+const ChartCard = ({ title, renderChart, height = 260, note, wide = false, insightsRows, insightsFileName, insightsColumns }) => {
   const [zoomed, setZoomed] = useState(false);
   const [showData, setShowData] = useState(false);
   const cardRef = useRef(null);
@@ -638,6 +643,7 @@ const ChartCard = ({ title, renderChart, height = 260, note, wide = false, insig
         <UnderlyingDataModal
           rows={insightsRows}
           fileName={insightsFileName}
+          columns={insightsColumns}
           onClose={() => setShowData(false)}
         />
       )}
@@ -2645,6 +2651,7 @@ const MISConverterTool = () => {
                     title="Cashless vs reimbursement"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['Claim Type']}
                     renderChart={(h) => (
                       <PopOutPieChart data={a.claimTypeData} height={h} />
                     )}
@@ -2655,6 +2662,7 @@ const MISConverterTool = () => {
                     title="Cashless vs reimbursement ratio"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['Claim Type']}
                     renderChart={(h) => (
                       <PopOutPieChart data={a.cashlessReimbRatioPie} height={h} isRatio />
                     )}
@@ -2665,6 +2673,7 @@ const MISConverterTool = () => {
                     title="Reimbursement TAT (Days)"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['Date of Discharge', 'LDR', 'Date of Settlement']}
                     renderChart={(h) => (
                       a.reimbTATData && a.reimbTATData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={h}>
@@ -2689,6 +2698,7 @@ const MISConverterTool = () => {
                     title="Age-wise split"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['dob / age']}
                     renderChart={(h) => (
                       a.ageData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={h}>
@@ -2716,6 +2726,7 @@ const MISConverterTool = () => {
                     title="Relationship-wise split"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['benef_relation']}
                     renderChart={(h) => (
                       <PopOutPieChart data={a.relationData} height={h} />
                     )}
@@ -2728,6 +2739,7 @@ const MISConverterTool = () => {
                     height={380}
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['State', 'City']}
                     renderChart={(h) => (
                       <IndiaClaimsMap
                         stateCounts={a.stateCounts}
@@ -2744,6 +2756,7 @@ const MISConverterTool = () => {
                     height={Math.max(260, a.rejectionReasonData.length * 42)}
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['Status', 'Remark-Rejection']}
                     renderChart={(h) => (
                       a.rejectionReasonData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={h}>
@@ -2773,6 +2786,7 @@ const MISConverterTool = () => {
                     height={Math.max(260, a.diseaseData.length * 42)}
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['Disease Category']}
                     renderChart={(h) => (
                       <ResponsiveContainer width="100%" height={h}>
                         <BarChart
@@ -2797,6 +2811,7 @@ const MISConverterTool = () => {
                     title="Claim nature: Maternity / Injury / Illness"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
+                    insightsColumns={['Disease Category', 'Treatment', 'Claim Type 1']}
                     renderChart={(h) => (
                       <ResponsiveContainer width="100%" height={h}>
                         <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
@@ -2815,12 +2830,31 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* NEW: Deduction % Chart (conditional on checkbox) */}
+                  {/* NEW: SI Utilization Chart — always shown, placed second-to-last */}
+                  <ChartCard
+                    title="Sum Insured Utilization %"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
+                    insightsColumns={['Sum Insured', 'Claim Approved']}
+                    renderChart={(h) => (
+                      a.siUtilizationData && a.siUtilizationData.length > 0 ? (
+                        <PopOutPieChart data={a.siUtilizationData} height={h} />
+                      ) : (
+                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>No SI utilization data found.</p></div>
+                      )
+                    )}
+                  />
+
+                  {/* NEW: Deduction % Chart — conditional on checkbox, placed last.
+                      Because this card only renders into the DOM when showDeductionAnalysis is true,
+                      it is automatically included in (or excluded from) the PDF export as well —
+                      the PDF is generated from a screenshot of whatever is currently on screen. */}
                   {showDeductionAnalysis && (
                     <ChartCard
                       title="Deduction % Distribution"
                       insightsRows={insightsRows}
                       insightsFileName={insightsFile?.name}
+                      insightsColumns={['Claim Submitted', 'Deduction Amt']}
                       renderChart={(h) => (
                         a.deductionPercentageData && a.deductionPercentageData.length > 0 ? (
                           <PopOutPieChart data={a.deductionPercentageData} height={h} />
@@ -2830,20 +2864,6 @@ const MISConverterTool = () => {
                       )}
                     />
                   )}
-
-                  {/* NEW: SI Utilization Chart */}
-                  <ChartCard
-                    title="Sum Insured Utilization %"
-                    insightsRows={insightsRows}
-                    insightsFileName={insightsFile?.name}
-                    renderChart={(h) => (
-                      a.siUtilizationData && a.siUtilizationData.length > 0 ? (
-                        <PopOutPieChart data={a.siUtilizationData} height={h} />
-                      ) : (
-                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>No SI utilization data found.</p></div>
-                      )
-                    )}
-                  />
 
                 </div>
               </div>
@@ -2890,9 +2910,9 @@ const MISConverterTool = () => {
             <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, broker, policy year, premiums, claims paid, dates, lives) to generate the insights dashboard.</li>
             <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
             <li>Dashboard covers: status by count/value, annualized claims, claim type, reimbursement TAT, age, relationship, disease, claim nature, rejections, and state/city claims labeled with each state's top city.</li>
-            <li>Optional Deduction % chart shows distribution of deductions across claims (checkbox-controlled).</li>
-            <li>SI Utilization chart always displays to show percentage of sum insured used by claims.</li>
-            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows of the uploaded final file.</li>
+            <li>SI Utilization chart always displays (second-to-last) to show percentage of sum insured used by claims.</li>
+            <li>Optional Deduction % chart (checkbox-controlled) shows distribution of deductions across claims — it appears last, and is only included in the PDF export when the checkbox is checked.</li>
+            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows for just the column(s) that chart depends on.</li>
             <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard.</li>
             <li>Click "Download full dashboard as PDF" to save the entire dashboard as a multi-page PDF file.</li>
           </ul>
