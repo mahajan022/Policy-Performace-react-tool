@@ -43,7 +43,7 @@ const DATE_COLUMNS = new Set([
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// ============================================================================
+// ============================================================================ 
 // UPDATED: NUMBER FORMATTING - NO DECIMALS, INDIAN STYLE
 // ============================================================================
 const fmtCurrency = (v) => {
@@ -505,7 +505,12 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 const UnderlyingDataModal = ({ rows, fileName, onClose, columns: columnsOverride }) => {
   const allColumns = rows && rows.length ? Object.keys(rows[0]) : [];
   const columns = (columnsOverride && columnsOverride.length)
-    ? columnsOverride.filter(c => allColumns.includes(c))
+    ? [
+        // Compulsory columns first, in fixed order — always shown regardless of chart
+        ...COMMON_UNDERLYING_COLUMNS.filter(c => allColumns.includes(c)),
+        // Then this chart's own columns, minus any already covered above
+        ...columnsOverride.filter(c => allColumns.includes(c) && !COMMON_UNDERLYING_COLUMNS.includes(c))
+      ]
     : allColumns;
 
   return (
@@ -752,6 +757,24 @@ const bucketClaimNature = (disease, treatment, claimType1) => {
 const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Rejected', 'Settled', 'Withdrawn'];
 
 // ============================================================================
+// COMMON UNDERLYING-DATA COLUMNS
+// These 9 columns must ALWAYS appear (in this fixed order, first) in the
+// "view underlying data" table for every chart, in addition to whatever
+// columns that specific chart depends on.
+// ============================================================================
+const COMMON_UNDERLYING_COLUMNS = [
+  'Sr No',
+  'Employee ID',
+  'Name of Employee',
+  'Insured Person',
+  'benef_relation',
+  'dob / age',
+  'Status',
+  'Claim Submitted',
+  'Claim Approved'
+];
+
+// ============================================================================
 // NEW: DEDUCTION % CALCULATION
 // ============================================================================
 const calculateDeductionPercentage = (rows) => {
@@ -828,7 +851,11 @@ const calculateSIUtilization = (rows) => {
 };
 
 // ============================================================================
-// NEW: REIMBURSEMENT TAT CALCULATION
+// UPDATED: REIMBURSEMENT TAT CALCULATION
+// Returns null (not 0) for a metric when there's no valid data for it yet, so
+// the UI can show a proper "not available" state instead of a misleading
+// flat 0-day bar while the team hasn't filled in Discharge/LDR/Settlement
+// dates in the MIS. Once those dates are filled, real averages will show up.
 // ============================================================================
 const calculateReimbTAT = (rows) => {
   const dischargeToLDR = [];
@@ -856,16 +883,18 @@ const calculateReimbTAT = (rows) => {
 
   const avgDischargeToLDR = dischargeToLDR.length > 0
     ? Math.round(dischargeToLDR.reduce((a, b) => a + b) / dischargeToLDR.length)
-    : 0;
+    : null;
 
   const avgLDRToSettlement = ldrToSettlement.length > 0
     ? Math.round(ldrToSettlement.reduce((a, b) => a + b) / ldrToSettlement.length)
-    : 0;
+    : null;
 
-  return [
-    { name: 'Discharge to LDR', value: avgDischargeToLDR },
-    { name: 'LDR to Settlement', value: avgLDRToSettlement }
-  ];
+  return {
+    avgDischargeToLDR,
+    avgLDRToSettlement,
+    dischargeToLDRSampleSize: dischargeToLDR.length,
+    ldrToSettlementSampleSize: ldrToSettlement.length
+  };
 };
 
 // ============================================================================
@@ -987,7 +1016,7 @@ const getDashboardAnalytics = (rows) => {
     statusValueSums,
     deductionPercentageData: calculateDeductionPercentage(rows),
     siUtilizationData: calculateSIUtilization(rows),
-    reimbTATData: calculateReimbTAT(rows)
+    reimbTAT: calculateReimbTAT(rows)
   };
 };
 
@@ -2660,27 +2689,66 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* Reimbursement TAT */}
+                  {/* 2a. Reimbursement TAT — Discharge to LDR (own card) */}
                   <ChartCard
-                    title="Reimbursement TAT (Days)"
+                    title="Discharge to LDR (Days)"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
-                    insightsColumns={['Date of Discharge', 'LDR', 'Date of Settlement']}
+                    insightsColumns={['Date of Discharge', 'LDR']}
                     renderChart={(h) => (
-                      a.reimbTATData && a.reimbTATData.length > 0 ? (
+                      a.reimbTAT.avgDischargeToLDR !== null ? (
                         <ResponsiveContainer width="100%" height={h}>
-                          <BarChart data={a.reimbTATData} margin={{ top: 24, right: 28, bottom: 5, left: 5 }}>
+                          <BarChart
+                            data={[{ name: 'Discharge to LDR', value: a.reimbTAT.avgDischargeToLDR }]}
+                            margin={{ top: 24, right: 28, bottom: 5, left: 5 }}
+                          >
                             <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
                             <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
                             <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
                             <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                            <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={COLORS.accent}>
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={COLORS.accent} maxBarSize={90}>
                               <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary, offset: 10 }} />
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
                       ) : (
-                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>TAT data not available.</p></div>
+                        <div style={styles.noDataBox}>
+                          <p style={{ margin: 0 }}>
+                            TAT not available yet — this will populate once "Date of Discharge" and "LDR" are filled in for claims in the MIS.
+                          </p>
+                        </div>
+                      )
+                    )}
+                  />
+
+                  {/* 2b. Reimbursement TAT — LDR to Settlement (own card) */}
+                  <ChartCard
+                    title="LDR to Settlement (Days)"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
+                    insightsColumns={['LDR', 'Date of Settlement']}
+                    renderChart={(h) => (
+                      a.reimbTAT.avgLDRToSettlement !== null ? (
+                        <ResponsiveContainer width="100%" height={h}>
+                          <BarChart
+                            data={[{ name: 'LDR to Settlement', value: a.reimbTAT.avgLDRToSettlement }]}
+                            margin={{ top: 24, right: 28, bottom: 5, left: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                            <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                            <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                            <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={COLORS.accentMid} maxBarSize={90}>
+                              <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary, offset: 10 }} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div style={styles.noDataBox}>
+                          <p style={{ margin: 0 }}>
+                            TAT not available yet — this will populate once "LDR" and "Date of Settlement" are filled in for claims in the MIS.
+                          </p>
+                        </div>
                       )
                     )}
                   />
@@ -2914,10 +2982,11 @@ const MISConverterTool = () => {
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
             <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, broker, policy year, premiums, claims paid, dates, lives) to generate the insights dashboard.</li>
             <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
-            <li>Dashboard covers: status by count/value, annualized claims, claim type, reimbursement TAT, age, relationship, disease, claim nature, rejections, and state/city claims labeled with each state's top city.</li>
+            <li>Dashboard covers: status by count/value, annualized claims, claim type, reimbursement TAT (Discharge→LDR and LDR→Settlement shown as two separate charts), age, relationship, disease, claim nature, rejections, and state/city claims labeled with each state's top city.</li>
+            <li>The two Reimbursement TAT charts show "not available yet" until the team fills in Discharge Date / LDR / Settlement Date in the MIS — they auto-populate once that data is present.</li>
             <li>SI Utilization chart always displays (second-to-last) to show percentage of sum insured used by claims.</li>
             <li>Deduction % chart always displays last on the dashboard. The checkbox below the "Download full dashboard as PDF" button only controls whether it's included in the exported PDF — it always shows in the web tool.</li>
-            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows for just the column(s) that chart depends on.</li>
+            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows. This table always includes S.No, Employee ID, Employee Name, Raised For, Relationship, Date of Birth, Status, Claims Submitted, and Approved Amount, plus the column(s) that specific chart depends on.</li>
             <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard.</li>
             <li>Click "Download full dashboard as PDF" to save the entire dashboard as a multi-page PDF file.</li>
           </ul>
