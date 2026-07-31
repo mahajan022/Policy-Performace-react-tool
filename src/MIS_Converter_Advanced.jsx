@@ -2892,7 +2892,7 @@ const MISConverterTool = () => {
 
                   {/* SI Utilization Chart — always shown, second-to-last */}
                   <ChartCard
-                    title="Sum Insured Utilization %"
+                    title="% SI Utilization"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['Sum Insured', 'Claim Approved']}
@@ -2911,7 +2911,7 @@ const MISConverterTool = () => {
                       based on the checkbox below the "Download PDF" button. */}
                   <div ref={deductionCardRef}>
                     <ChartCard
-                      title="Deduction % Distribution"
+                      title="Deduction %"
                       insightsRows={insightsRows}
                       insightsFileName={insightsFile?.name}
                       insightsColumns={['Claim Submitted', 'Deduction Amt']}
