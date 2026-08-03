@@ -842,7 +842,7 @@ const calculateSIUtilization = (rows) => {
     else if (percentage <= 60) buckets['40-60%'] += 1;
     else if (percentage <= 80) buckets['60-80%'] += 1;
     else if (percentage < 100) buckets['80-99%'] += 1;
-    else buckets['100%+ (Exceeded)'] += 1;
+    else buckets['>100%'] += 1;
   });
 
   return Object.entries(buckets)
@@ -2670,7 +2670,7 @@ const MISConverterTool = () => {
 
                   {/* 1. Cashless vs Reimbursement */}
                   <ChartCard
-                    title="Cashless vs reimbursement"
+                    title="Cashless vs reimbursement (Count)"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['Claim Type']}
@@ -2681,7 +2681,7 @@ const MISConverterTool = () => {
 
                   {/* 1b. Cashless vs Reimbursement — ratio, as a pie chart */}
                   <ChartCard
-                    title="Cashless vs reimbursement ratio"
+                    title="Cashless vs reimbursement (Ratio)"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['Claim Type']}
@@ -2692,7 +2692,7 @@ const MISConverterTool = () => {
 
                   {/* 2a. Reimbursement TAT — Discharge to LDR (own card) */}
                   <ChartCard
-                    title="Discharge to LDR (Days)"
+                    title="Reimbursement TAT Part A - Discharge to LDR"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['Date of Discharge', 'LDR']}
@@ -2724,7 +2724,7 @@ const MISConverterTool = () => {
 
                   {/* 2b. Reimbursement TAT — LDR to Settlement (own card) */}
                   <ChartCard
-                    title="LDR to Settlement (Days)"
+                    title="Reimbursement TAT Part B - LDR to Settlement"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['LDR', 'Date of Settlement']}
@@ -2756,7 +2756,7 @@ const MISConverterTool = () => {
 
                   {/* 3. Age-wise split */}
                   <ChartCard
-                    title="Age-wise split"
+                    title="Age-Wise Split (Claims Count)"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['dob / age']}
@@ -2784,7 +2784,7 @@ const MISConverterTool = () => {
 
                   {/* 4. Relationship-wise split */}
                   <ChartCard
-                    title="Relationship-wise split"
+                    title="Relationship-wise split (Claims Count)"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['benef_relation']}
@@ -2795,7 +2795,7 @@ const MISConverterTool = () => {
 
                   {/* 5. Claims by state — interactive India map */}
                   <ChartCard
-                    title="Claims by state"
+                    title="Geographical Distribution (Claims Count)"
                     wide
                     height={380}
                     insightsRows={insightsRows}
@@ -2810,10 +2810,91 @@ const MISConverterTool = () => {
                       />
                     )}
                   />
+                  {/* 7b. Claim nature */}
+                  <ChartCard
+                    title="Claim nature: Maternity / Injury / Illness (CLaims Count)"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
+                    insightsColumns={['Disease Category', 'Treatment', 'Claim Type 1']}
+                    renderChart={(h) => (
+                      <ResponsiveContainer width="100%" height={h}>
+                        <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
+                          <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                          <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                            <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary, offset: 10 }} />
+                            {a.claimNatureData.map((_, i) => (
+                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  />
+                   {/* 7. Disease-wise split */}
+                  <ChartCard
+                    title="Disease-wise split (Claims Count)"
+                    height={Math.max(260, a.diseaseData.length * 42)}
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
+                    insightsColumns={['Disease Category']}
+                    renderChart={(h) => (
+                      <ResponsiveContainer width="100%" height={h}>
+                        <BarChart
+                          data={a.diseaseData}
+                          layout="vertical"
+                          margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                          <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
+                          <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
+                          <Tooltip content={<WrappedBarTooltip color={COLORS.accent} />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
+                          <Bar dataKey="value" fill={COLORS.accent} radius={[0, 4, 4, 0]} maxBarSize={26}>
+                            <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  />
+                   {/* SI Utilization Chart — always shown, second-to-last */}
+                  <ChartCard
+                    title="% SI Utilization"
+                    insightsRows={insightsRows}
+                    insightsFileName={insightsFile?.name}
+                    insightsColumns={['Sum Insured', 'Claim Approved']}
+                    renderChart={(h) => (
+                      a.siUtilizationData && a.siUtilizationData.length > 0 ? (
+                        <PopOutPieChart data={a.siUtilizationData} height={h} />
+                      ) : (
+                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>No SI utilization data found.</p></div>
+                      )
+                    )}
+                  />
+                     {/* Deduction % Chart — ALWAYS visible on the live dashboard, placed
+                      last in the grid. Wrapped in a ref'd div so it can be temporarily
+                      hidden (display: none) only during the PDF screenshot capture,
+                      based on the checkbox below the "Download PDF" button. */}
+                  <div ref={deductionCardRef}>
+                    <ChartCard
+                      title="Deduction %"
+                      insightsRows={insightsRows}
+                      insightsFileName={insightsFile?.name}
+                      insightsColumns={['Claim Submitted', 'Deduction Amt']}
+                      renderChart={(h) => (
+                        a.deductionPercentageData && a.deductionPercentageData.length > 0 ? (
+                          <PopOutPieChart data={a.deductionPercentageData} height={h} />
+                        ) : (
+                          <div style={styles.noDataBox}><p style={{ margin: 0 }}>No deduction data found.</p></div>
+                        )
+                      )}
+                    />
+                  </div>
 
                   {/* 6. Rejected claims reasons */}
                   <ChartCard
-                    title="Rejected claims — reasons"
+                    title="Rejected claims by Reasons (Claims Count)"
                     height={Math.max(260, a.rejectionReasonData.length * 42)}
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
@@ -2841,90 +2922,13 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* 7. Disease-wise split */}
-                  <ChartCard
-                    title="Disease-wise split"
-                    height={Math.max(260, a.diseaseData.length * 42)}
-                    insightsRows={insightsRows}
-                    insightsFileName={insightsFile?.name}
-                    insightsColumns={['Disease Category']}
-                    renderChart={(h) => (
-                      <ResponsiveContainer width="100%" height={h}>
-                        <BarChart
-                          data={a.diseaseData}
-                          layout="vertical"
-                          margin={{ top: 5, right: 28, bottom: 5, left: 5 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                          <XAxis type="number" allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                          <YAxis type="category" dataKey="name" width={140} tick={<TruncatedYAxisTick />} interval={0} />
-                          <Tooltip content={<WrappedBarTooltip color={COLORS.accent} />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                          <Bar dataKey="value" fill={COLORS.accent} radius={[0, 4, 4, 0]} maxBarSize={26}>
-                            <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary }} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  />
+                 
 
-                  {/* 7b. Claim nature */}
-                  <ChartCard
-                    title="Claim nature: Maternity / Injury / Illness"
-                    insightsRows={insightsRows}
-                    insightsFileName={insightsFile?.name}
-                    insightsColumns={['Disease Category', 'Treatment', 'Claim Type 1']}
-                    renderChart={(h) => (
-                      <ResponsiveContainer width="100%" height={h}>
-                        <BarChart data={a.claimNatureData} margin={{ top: 24, right: 5, left: 5, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: COLORS.textSecondary }} />
-                          <YAxis allowDecimals={false} tick={{ fill: COLORS.textSecondary }} />
-                          <Tooltip content={<WrappedBarTooltip />} cursor={{ fill: 'rgba(17,163,135,0.08)' }} />
-                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                            <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: COLORS.textPrimary, offset: 10 }} />
-                            {a.claimNatureData.map((_, i) => (
-                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  />
+                  
 
-                  {/* SI Utilization Chart — always shown, second-to-last */}
-                  <ChartCard
-                    title="% SI Utilization"
-                    insightsRows={insightsRows}
-                    insightsFileName={insightsFile?.name}
-                    insightsColumns={['Sum Insured', 'Claim Approved']}
-                    renderChart={(h) => (
-                      a.siUtilizationData && a.siUtilizationData.length > 0 ? (
-                        <PopOutPieChart data={a.siUtilizationData} height={h} />
-                      ) : (
-                        <div style={styles.noDataBox}><p style={{ margin: 0 }}>No SI utilization data found.</p></div>
-                      )
-                    )}
-                  />
+                 
 
-                  {/* Deduction % Chart — ALWAYS visible on the live dashboard, placed
-                      last in the grid. Wrapped in a ref'd div so it can be temporarily
-                      hidden (display: none) only during the PDF screenshot capture,
-                      based on the checkbox below the "Download PDF" button. */}
-                  <div ref={deductionCardRef}>
-                    <ChartCard
-                      title="Deduction %"
-                      insightsRows={insightsRows}
-                      insightsFileName={insightsFile?.name}
-                      insightsColumns={['Claim Submitted', 'Deduction Amt']}
-                      renderChart={(h) => (
-                        a.deductionPercentageData && a.deductionPercentageData.length > 0 ? (
-                          <PopOutPieChart data={a.deductionPercentageData} height={h} />
-                        ) : (
-                          <div style={styles.noDataBox}><p style={{ margin: 0 }}>No deduction data found.</p></div>
-                        )
-                      )}
-                    />
-                  </div>
+               
 
                 </div>
               </div>
