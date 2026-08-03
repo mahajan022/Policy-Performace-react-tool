@@ -754,7 +754,7 @@ const bucketClaimNature = (disease, treatment, claimType1) => {
   return 'Illness';
 };
 
-const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Rejected', 'Settled', 'Withdrawn'];
+const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Settled', 'Withdrawn' , 'Rejected'];
 
 // ============================================================================
 // COMMON UNDERLYING-DATA COLUMNS
@@ -2602,6 +2602,10 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalValue}>{endorsementPremium !== '' ? fmtCurrency(endorsementPremium) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
+                    <div style={styles.policyTotalLabel}>Total premium</div>
+                    <div style={styles.policyTotalValue}>{fmtCurrency(lr.netPremium)}</div>
+                  </div>
+                  <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Inception lives</div>
                     <div style={styles.policyTotalValue}>{inceptionLives !== '' ? fmtNumber(inceptionLives) : '—'}</div>
                   </div>
@@ -2609,10 +2613,7 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalLabel}>Current lives</div>
                     <div style={styles.policyTotalValue}>{expiringLives !== '' ? fmtNumber(expiringLives) : '—'}</div>
                   </div>
-                  <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>Net / Total premium</div>
-                    <div style={styles.policyTotalValue}>{fmtCurrency(lr.netPremium)}</div>
-                  </div>
+
                 </div>
 
                 {/* ROW 2: Loss Ratio Metrics (5 items) */}
