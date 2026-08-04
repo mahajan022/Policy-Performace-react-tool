@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { toBlob, toCanvas } from 'html-to-image';
@@ -44,7 +44,7 @@ const DATE_COLUMNS = new Set([
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ============================================================================ 
-// UPDATED: NUMBER FORMATTING - NO DECIMALS, INDIAN STYLE
+// NUMBER FORMATTING - NO DECIMALS, INDIAN STYLE
 // ============================================================================
 const fmtCurrency = (v) => {
   const num = Number(v || 0);
@@ -61,6 +61,64 @@ const fmtDays = (v) => {
 
 const fmtNumber = (v) => {
   return Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+};
+
+// ============================================================================
+// NEW: INDIAN-STYLE COMMA-FORMATTED NUMBER INPUT HELPERS
+// Used so premium / claims / lives inputs show "25,00,000" style commas
+// while the underlying state value stays a plain numeric string.
+// ============================================================================
+const formatIndianInputValue = (value) => {
+  if (value === '' || value === undefined || value === null) return '';
+  const num = Number(value);
+  if (isNaN(num)) return '';
+  return num.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+};
+
+const parseIndianInputValue = (formatted) => {
+  const cleaned = String(formatted).replace(/[^0-9]/g, '');
+  return cleaned === '' ? '' : String(Number(cleaned));
+};
+
+// A text-mode numeric input that displays Indian comma grouping (e.g. 25,00,000)
+// while typing, but keeps the raw numeric string (no commas) in parent state.
+const IndianNumberField = ({ value, onChange, placeholder }) => {
+  const [displayValue, setDisplayValue] = useState(formatIndianInputValue(value));
+  const focusedRef = useRef(false);
+
+  React.useEffect(() => {
+    if (!focusedRef.current) {
+      setDisplayValue(formatIndianInputValue(value));
+    }
+  }, [value]);
+
+  const handleFocus = () => { focusedRef.current = true; };
+
+  const handleChange = (e) => {
+    const rawDigits = e.target.value.replace(/[^0-9]/g, '');
+    const parsed = parseIndianInputValue(rawDigits);
+    setDisplayValue(rawDigits === '' ? '' : Number(rawDigits).toLocaleString('en-IN', { maximumFractionDigits: 0 }));
+    onChange(parsed);
+  };
+
+  const handleBlur = () => {
+    focusedRef.current = false;
+    setDisplayValue(formatIndianInputValue(value));
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={displayValue}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      placeholder={placeholder}
+      className="mis-field"
+      style={styles.fieldInput}
+    />
+  );
 };
 
 // ============================================================================
@@ -500,6 +558,26 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 };
 
 // ============================================================================
+// NEW: CURRENCY COLUMNS THAT SHOULD BE SHOWN WITH INDIAN COMMA FORMATTING
+// IN THE "UNDERLYING DATA" TABLE (Claim Submitted, Claim Approved, etc.)
+// ============================================================================
+const CURRENCY_UNDERLYING_COLUMNS = new Set([
+  'Claim Submitted', 'Claim Approved', 'Deduction Amt', 'CO-PAY',
+  'Hospital Discount', 'Sum Insured'
+]);
+
+const formatUnderlyingCellValue = (col, value) => {
+  if (value === '' || value === undefined || value === null) return '';
+  if (CURRENCY_UNDERLYING_COLUMNS.has(col)) {
+    const num = Number(value);
+    if (!isNaN(num) && String(value).trim() !== '') {
+      return num.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    }
+  }
+  return String(value);
+};
+
+// ============================================================================
 // UNDERLYING DATA MODAL
 // ============================================================================
 const UnderlyingDataModal = ({ rows, fileName, onClose, columns: columnsOverride }) => {
@@ -548,7 +626,9 @@ const UnderlyingDataModal = ({ rows, fileName, onClose, columns: columnsOverride
               {(rows || []).map((row, i) => (
                 <tr key={i} style={i % 2 === 0 ? styles.previewRowEven : styles.previewRowOdd}>
                   {columns.map(col => (
-                    <td key={col} style={styles.previewCell}>{String(row[col] ?? '')}</td>
+                    <td key={col} style={{ ...styles.previewCell, ...(CURRENCY_UNDERLYING_COLUMNS.has(col) ? { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } : {}) }}>
+                      {formatUnderlyingCellValue(col, row[col])}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -773,6 +853,38 @@ const COMMON_UNDERLYING_COLUMNS = [
   'Claim Submitted',
   'Claim Approved'
 ];
+
+// ============================================================================
+// NEW: STATUS BUCKETS FOR AUTO-CALCULATING CLAIMS INCURRED (PAID + OUTSTANDING)
+// ============================================================================
+const PAID_STATUS_BUCKET = ['Settled'];
+const OUTSTANDING_STATUS_BUCKET = ['In Process', 'Under Query', 'Approved'];
+
+// ============================================================================
+// NEW: AUTOFILL "CLAIMS INCURRED (PAID + OUTSTANDING)" FROM THE UPLOADED SHEET
+// Paid = sum of Claim Approved for Settled claims.
+// Outstanding = sum of Claim Submitted for claims still moving (In Process /
+// Under Query / Approved but not yet settled).
+// ============================================================================
+const computeSuggestedClaimsIncurred = (rows) => {
+  if (!rows || rows.length === 0) return null;
+  let paid = 0;
+  let outstanding = 0;
+
+  rows.forEach(row => {
+    const status = String(row['Status'] || '').trim();
+    const approved = Number(row['Claim Approved']) || 0;
+    const submitted = Number(row['Claim Submitted']) || 0;
+
+    if (PAID_STATUS_BUCKET.includes(status)) {
+      paid += approved;
+    } else if (OUTSTANDING_STATUS_BUCKET.includes(status)) {
+      outstanding += submitted;
+    }
+  });
+
+  return { paid, outstanding, total: paid + outstanding };
+};
 
 // ============================================================================
 // NEW: DEDUCTION % CALCULATION
@@ -1102,6 +1214,20 @@ const MISConverterTool = () => {
   const [expiringLives, setExpiringLives] = useState('');
   const [insightsFieldsError, setInsightsFieldsError] = useState('');
 
+  // NEW: when checked, the Policy Start/End date fields stop auto-syncing each
+  // other (no more forced 365-day gap). Meant for short/non-annual policies
+  // (e.g. a 6-9 month policy) where the two dates shouldn't be linked.
+  const [customPolicyDuration, setCustomPolicyDuration] = useState(false);
+
+  // NEW: "Existing Clients" extra metrics — shown as a checkbox at the end of
+  // the policy details form. When checked, three extra fields appear and are
+  // later rendered as a single-row, 3-column table (not a chart) at the very
+  // end of the insights dashboard.
+  const [isExistingClient, setIsExistingClient] = useState(false);
+  const [appActivationPct, setAppActivationPct] = useState('');
+  const [doctelActivatedUsers, setDoctelActivatedUsers] = useState('');
+  const [hwBenefitsUtilised, setHwBenefitsUtilised] = useState('');
+
   // Deduction % chart: always shown on the dashboard, last in the grid. This checkbox
   // (rendered directly below the "Download full dashboard as PDF" button) ONLY
   // controls whether the chart is included when exporting the PDF — it never hides
@@ -1111,6 +1237,13 @@ const MISConverterTool = () => {
 
   const dashboardExportRef = useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
+
+  // NEW: auto-calculated Paid + Outstanding suggestion from the uploaded sheet,
+  // used to autofill "Claims incurred (Paid + Outstanding)" instead of typing it.
+  const suggestedClaimsIncurred = useMemo(
+    () => computeSuggestedClaimsIncurred(insightsRows),
+    [insightsRows]
+  );
 
   const insurersList = [
     "ABHI Inhouse",
@@ -1916,11 +2049,14 @@ const MISConverterTool = () => {
     }
   };
 
-  // NEW: EVENT HANDLERS FOR AUTO DATE FILL
+  // UPDATED: EVENT HANDLERS FOR AUTO DATE FILL — now respects the
+  // "custom policy duration" toggle. When that toggle is ON, changing one
+  // date no longer overwrites the other, so a 6-9 month (or any non-annual)
+  // policy period can be entered manually on both ends.
   const handlePolicyStartDateChange = (e) => {
     const startDate = e.target.value;
     setPolicyStartDate(startDate);
-    if (startDate) {
+    if (startDate && !customPolicyDuration) {
       const daysInYear = getDaysInYear(startDate);
       const autoEndDate = addDays(startDate, daysInYear);
       setPolicyEndDate(autoEndDate);
@@ -1930,11 +2066,15 @@ const MISConverterTool = () => {
   const handlePolicyEndDateChange = (e) => {
     const endDate = e.target.value;
     setPolicyEndDate(endDate);
-    if (endDate) {
+    if (endDate && !customPolicyDuration) {
       const daysInYear = getDaysInYear(endDate);
       const autoStartDate = subtractDays(endDate, daysInYear);
       setPolicyStartDate(autoStartDate);
     }
+  };
+
+  const handleCustomPolicyDurationToggle = (e) => {
+    setCustomPolicyDuration(e.target.checked);
   };
 
   const handleViewInsights = () => {
@@ -1985,6 +2125,11 @@ const MISConverterTool = () => {
     setInceptionLives('');
     setExpiringLives('');
     setInsightsFieldsError('');
+    setCustomPolicyDuration(false);
+    setIsExistingClient(false);
+    setAppActivationPct('');
+    setDoctelActivatedUsers('');
+    setHwBenefitsUtilised('');
     setError('');
     setProgress(0);
     setDownloadedOnce(false);
@@ -2016,6 +2161,18 @@ const MISConverterTool = () => {
       });
 
       const nodeRect = node.getBoundingClientRect();
+
+      // NEW: page margins so the PDF isn't an edge-to-edge screenshot.
+      // PDF_MARGIN is in jsPDF "pt" units (~10mm on all sides).
+      const PDF_MARGIN = 28;
+
+      const pdf = new jsPDF('p', 'pt', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pageWidth - PDF_MARGIN * 2;
+      const availableHeight = pageHeight - PDF_MARGIN * 2;
+
       const scaleX = nodeRect.width > 0 ? canvas.width / nodeRect.width : 1;
       const blocks = Array.from(node.querySelectorAll('[data-pdf-block]'))
         .map(el => {
@@ -2028,12 +2185,7 @@ const MISConverterTool = () => {
         .filter(b => b.bottom > b.top)
         .sort((a, b) => a.top - b.top);
 
-      const pdf = new jsPDF('p', 'pt', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      const imgWidth = pageWidth;
-      const pageCanvasHeight = Math.floor((pageHeight * canvas.width) / imgWidth);
+      const pageCanvasHeight = Math.floor((availableHeight * canvas.width) / imgWidth);
 
       let renderedHeight = 0;
       let firstPage = true;
@@ -2069,7 +2221,7 @@ const MISConverterTool = () => {
         const pageImgHeight = (finalSliceHeight * imgWidth) / canvas.width;
 
         if (!firstPage) pdf.addPage();
-        pdf.addImage(pageImgData, 'PNG', 0, 0, imgWidth, pageImgHeight);
+        pdf.addImage(pageImgData, 'PNG', PDF_MARGIN, PDF_MARGIN, imgWidth, pageImgHeight);
 
         firstPage = false;
         renderedHeight += finalSliceHeight;
@@ -2448,39 +2600,40 @@ const MISConverterTool = () => {
                     </div>
                     <div style={styles.fieldGroup}>
                       <label style={styles.fieldLabel}>Inception premium (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
+                      <IndianNumberField
                         value={inceptionPremium}
-                        onChange={(e) => setInceptionPremium(e.target.value)}
-                        placeholder="e.g. 2000000"
-                        className="mis-field"
-                        style={styles.fieldInput}
+                        onChange={setInceptionPremium}
+                        placeholder="e.g. 20,00,000"
                       />
                     </div>
                     <div style={styles.fieldGroup}>
                       <label style={styles.fieldLabel}>Endorsement premium (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
+                      <IndianNumberField
                         value={endorsementPremium}
-                        onChange={(e) => setEndorsementPremium(e.target.value)}
-                        placeholder="e.g. 150000"
-                        className="mis-field"
-                        style={styles.fieldInput}
+                        onChange={setEndorsementPremium}
+                        placeholder="e.g. 1,50,000"
                       />
                     </div>
                     <div style={styles.fieldGroup}>
                       <label style={styles.fieldLabel}>Claims incurred (Paid + Outstanding) (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
+                      <IndianNumberField
                         value={claimsPaid}
-                        onChange={(e) => setClaimsPaid(e.target.value)}
-                        placeholder="e.g. 2540053"
-                        className="mis-field"
-                        style={styles.fieldInput}
+                        onChange={setClaimsPaid}
+                        placeholder="e.g. 25,40,053"
                       />
+                      {suggestedClaimsIncurred && (
+                        <button
+                          type="button"
+                          onClick={() => setClaimsPaid(String(Math.round(suggestedClaimsIncurred.total)))}
+                          className="mis-btn mis-btn-outline"
+                          style={styles.autofillBtn}
+                        >
+                          Autofill from sheet: {fmtCurrency(suggestedClaimsIncurred.total)}
+                          <span style={styles.autofillBtnSub}>
+                            (Paid {fmtCurrency(suggestedClaimsIncurred.paid)} + Outstanding {fmtCurrency(suggestedClaimsIncurred.outstanding)})
+                          </span>
+                        </button>
+                      )}
                     </div>
                     <div style={styles.fieldGroup}>
                       <label style={styles.fieldLabel}>Claims MIS report generation date</label>
@@ -2514,29 +2667,81 @@ const MISConverterTool = () => {
                     </div>
                     <div style={styles.fieldGroup}>
                       <label style={styles.fieldLabel}>Inception lives</label>
-                      <input
-                        type="number"
-                        min="0"
+                      <IndianNumberField
                         value={inceptionLives}
-                        onChange={(e) => setInceptionLives(e.target.value)}
+                        onChange={setInceptionLives}
                         placeholder="e.g. 850"
-                        className="mis-field"
-                        style={styles.fieldInput}
                       />
                     </div>
                     <div style={styles.fieldGroup}>
                       <label style={styles.fieldLabel}>Current / expiring lives</label>
-                      <input
-                        type="number"
-                        min="0"
+                      <IndianNumberField
                         value={expiringLives}
-                        onChange={(e) => setExpiringLives(e.target.value)}
+                        onChange={setExpiringLives}
                         placeholder="e.g. 900"
-                        className="mis-field"
-                        style={styles.fieldInput}
                       />
                     </div>
                   </div>
+
+                  {/* NEW: toggle to break the Start/End date 365-day auto-sync,
+                      for short / non-annual policies (e.g. 6-9 months). When
+                      checked, both dates can be set independently. */}
+                  <label style={styles.inlineCheckboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={customPolicyDuration}
+                      onChange={handleCustomPolicyDurationToggle}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px', flexShrink: 0 }}
+                    />
+                    <span>This is a custom / non-annual policy duration (e.g. 6-9 months) — don't auto-fill the other date</span>
+                  </label>
+
+                  {/* NEW: Existing Clients checkbox — appears last, before "View insights".
+                      When checked, three extra fields appear for existing-client metrics. */}
+                  <label style={styles.inlineCheckboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={isExistingClient}
+                      onChange={(e) => setIsExistingClient(e.target.checked)}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px', flexShrink: 0 }}
+                    />
+                    <span>Existing Client — capture app / Doctel / H&amp;W utilisation metrics</span>
+                  </label>
+
+                  {isExistingClient && (
+                    <div style={styles.fieldsRowWide}>
+                      <div style={styles.fieldGroup}>
+                        <label style={styles.fieldLabel}>App Activation %</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={appActivationPct}
+                          onChange={(e) => setAppActivationPct(e.target.value)}
+                          placeholder="e.g. 62"
+                          className="mis-field"
+                          style={styles.fieldInput}
+                        />
+                      </div>
+                      <div style={styles.fieldGroup}>
+                        <label style={styles.fieldLabel}>Doctel Activated (Users)</label>
+                        <IndianNumberField
+                          value={doctelActivatedUsers}
+                          onChange={setDoctelActivatedUsers}
+                          placeholder="e.g. 320"
+                        />
+                      </div>
+                      <div style={styles.fieldGroup}>
+                        <label style={styles.fieldLabel}>Total H&amp;W Benefits Utilised (₹)</label>
+                        <IndianNumberField
+                          value={hwBenefitsUtilised}
+                          onChange={setHwBenefitsUtilised}
+                          placeholder="e.g. 4,50,000"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleViewInsights}
                     className="mis-btn mis-btn-primary"
@@ -2922,15 +3127,39 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                 
-
-                  
-
-                 
-
-               
-
                 </div>
+
+                {/* NEW: Existing Client Metrics — single-row, 3-column colored table,
+                    shown only if "Existing Client" was checked. Placed last, after
+                    every chart, as requested. This is a table, not a chart. */}
+                {isExistingClient && (
+                  <div style={styles.statGroupBox} data-pdf-block="true">
+                    <div style={styles.statGroupTitle}>Existing client metrics</div>
+                    <table style={styles.existingClientTable}>
+                      <thead>
+                        <tr>
+                          <th style={{ ...styles.existingClientHeaderCell, backgroundColor: '#5C6BC0' }}>App Activation %</th>
+                          <th style={{ ...styles.existingClientHeaderCell, backgroundColor: '#11a387' }}>Doctel Activated (Users)</th>
+                          <th style={{ ...styles.existingClientHeaderCell, backgroundColor: '#c98a5c' }}>Total H&amp;W Benefits Utilised (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ ...styles.existingClientCell, backgroundColor: 'rgba(92,107,192,0.12)' }}>
+                            {appActivationPct !== '' ? `${appActivationPct}%` : '—'}
+                          </td>
+                          <td style={{ ...styles.existingClientCell, backgroundColor: 'rgba(17,163,135,0.12)' }}>
+                            {doctelActivatedUsers !== '' ? fmtNumber(doctelActivatedUsers) : '—'}
+                          </td>
+                          <td style={{ ...styles.existingClientCell, backgroundColor: 'rgba(201,138,92,0.12)' }}>
+                            {hwBenefitsUtilised !== '' ? fmtCurrency(hwBenefitsUtilised) : '—'}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
               </div>
 
               <button
@@ -2986,14 +3215,18 @@ const MISConverterTool = () => {
             <li>Columns, status, and gender terms are mapped automatically from Healthysure's mapping sheet.</li>
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
             <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, broker, policy year, premiums, claims paid, dates, lives) to generate the insights dashboard.</li>
+            <li>Premium, claims, and lives inputs now display Indian-style comma grouping (e.g. 25,00,000) as you type.</li>
+            <li>Claims incurred (Paid + Outstanding) can be autofilled directly from the uploaded sheet — Paid comes from Settled claims' approved amount, Outstanding from In Process / Under Query / Approved claims' submitted amount — or entered manually.</li>
+            <li>Policy start/end dates auto-fill each other assuming a 12-month policy; tick "custom / non-annual policy duration" to enter a 6-9 month (or any other) period manually on both ends.</li>
             <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
+            <li>Tick "Existing Client" to capture App Activation %, Doctel Activated Users, and Total H&amp;W Benefits Utilised — shown as a single-row, 3-column table at the end of the dashboard.</li>
             <li>Dashboard covers: status by count/value, annualized claims, claim type, reimbursement TAT (Discharge→LDR and LDR→Settlement shown as two separate charts), age, relationship, disease, claim nature, rejections, and state/city claims labeled with each state's top city.</li>
             <li>The two Reimbursement TAT charts show "not available yet" until the team fills in Discharge Date / LDR / Settlement Date in the MIS — they auto-populate once that data is present.</li>
-            <li>SI Utilization chart always displays (second-to-last) to show percentage of sum insured used by claims.</li>
-            <li>Deduction % chart always displays last on the dashboard. The checkbox below the "Download full dashboard as PDF" button only controls whether it's included in the exported PDF — it always shows in the web tool.</li>
-            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows. This table always includes S.No, Employee ID, Employee Name, Raised For, Relationship, Date of Birth, Status, Claims Submitted, and Approved Amount, plus the column(s) that specific chart depends on.</li>
+            <li>SI Utilization chart always displays to show percentage of sum insured used by claims.</li>
+            <li>Deduction % chart always displays on the dashboard. The checkbox below the "Download full dashboard as PDF" button only controls whether it's included in the exported PDF — it always shows in the web tool.</li>
+            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows, with currency columns (Claim Submitted, Claim Approved, etc.) shown with Indian comma formatting. This table always includes S.No, Employee ID, Employee Name, Raised For, Relationship, Date of Birth, Status, Claims Submitted, and Approved Amount, plus the column(s) that specific chart depends on.</li>
             <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard.</li>
-            <li>Click "Download full dashboard as PDF" to save the entire dashboard as a multi-page PDF file.</li>
+            <li>Click "Download full dashboard as PDF" to save the entire dashboard as a margined, multi-page PDF file.</li>
           </ul>
         </div>
       </main>
@@ -3206,6 +3439,28 @@ const styles = {
     borderRadius: '7px', cursor: 'pointer', fontFamily: 'inherit'
   },
 
+  // NEW: small autofill hint button under the Claims Incurred field
+  autofillBtn: {
+    marginTop: '8px', width: '100%', padding: '9px 12px', fontSize: '11.5px', fontWeight: 700,
+    color: COLORS.accentDeep, backgroundColor: COLORS.mint, border: `1.5px dashed ${COLORS.accent}`,
+    borderRadius: '7px', cursor: 'pointer', fontFamily: 'inherit',
+    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', textAlign: 'left'
+  },
+  autofillBtnSub: { fontSize: '10.5px', fontWeight: 500, color: COLORS.textSecondary },
+
+  // NEW: inline checkbox row style used for "custom policy duration" and
+  // "Existing Client" toggles
+  inlineCheckboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: '13px',
+    color: COLORS.textSecondary,
+    fontWeight: 600,
+    padding: '14px 4px 4px',
+    cursor: 'pointer'
+  },
+
   progressContainer: { marginTop: '18px' },
   progressBar: { width: '100%', height: '6px', backgroundColor: COLORS.surface, borderRadius: '4px', overflow: 'hidden', border: `1px solid ${COLORS.border}` },
   progressFill: { height: '100%', backgroundColor: COLORS.accent, transition: 'width 0.3s' },
@@ -3311,6 +3566,17 @@ const styles = {
   },
   statValue: { fontSize: '21px', fontWeight: 800, color: COLORS.accentDeep, fontVariantNumeric: 'tabular-nums' },
   statLabel: { fontSize: '10px', color: COLORS.accentDeep, fontWeight: 700, textTransform: 'uppercase', marginTop: '4px', letterSpacing: '0.3px', opacity: 0.75 },
+
+  // NEW: Existing Client Metrics table (single row, 3 distinctly colored columns)
+  existingClientTable: { width: '100%', borderCollapse: 'separate', borderSpacing: '10px 0' },
+  existingClientHeaderCell: {
+    padding: '10px 14px', textAlign: 'center', color: '#ffffff', fontSize: '11px',
+    fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.4px', borderRadius: '8px 8px 0 0'
+  },
+  existingClientCell: {
+    padding: '18px 14px', textAlign: 'center', fontSize: '20px', fontWeight: 800,
+    color: COLORS.textPrimary, borderRadius: '0 0 8px 8px', fontVariantNumeric: 'tabular-nums'
+  },
 
   chartCard: { backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '10px', padding: '18px' },
   chartCardTitle: { fontSize: '12.5px', fontWeight: 700, color: COLORS.textPrimary, margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.4px' },
