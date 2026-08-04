@@ -839,6 +839,18 @@ const bucketClaimNature = (disease, treatment, claimType1) => {
 
 const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Settled', 'Withdrawn' , 'Rejected'];
 
+// Case/whitespace-insensitive match against the canonical status list above.
+// Handles variants like "in process", "IN PROCESS", " Settled " etc. — whether
+// they come from a manual edit, a re-uploaded file, or an insurer mapping that
+// didn't produce the exact canonical casing — and maps them back to the exact
+// canonical string so every downstream comparison (Claims Incurred, status
+// counts, status value sums) works correctly instead of silently dropping them.
+const normalizeStatusValue = (raw) => {
+  const trimmed = String(raw || '').trim();
+  const match = ALL_STATUSES.find(s => s.toLowerCase() === trimmed.toLowerCase());
+  return match || trimmed;
+};
+
 // ============================================================================
 // COMMON UNDERLYING-DATA COLUMNS
 // These 9 columns must ALWAYS appear (in this fixed order, first) in the
@@ -868,6 +880,11 @@ const COMMON_UNDERLYING_COLUMNS = [
 //   - In Process / Under Query   -> use the Claim Submitted amount
 //     (nothing has been approved yet, so the submitted amount is the best
 //     estimate of what's outstanding)
+//
+// FIX: Status matching is now case/whitespace-insensitive via
+// normalizeStatusValue(), so a value like "In process" or " settled " still
+// matches the canonical "In Process" / "Settled" instead of silently falling
+// through as unrecognized and being excluded from the total.
 // ============================================================================
 const CLAIMS_INCURRED_APPROVED_STATUSES = ['Settled', 'Approved'];
 const CLAIMS_INCURRED_SUBMITTED_STATUSES = ['In Process', 'Under Query'];
@@ -878,7 +895,7 @@ const computeClaimsIncurred = (rows) => {
   let total = 0;
 
   rows.forEach(row => {
-    const status = String(row['Status'] || '').trim();
+    const status = normalizeStatusValue(row['Status']);
     if (CLAIMS_INCURRED_EXCLUDED_STATUSES.includes(status)) return;
 
     if (CLAIMS_INCURRED_APPROVED_STATUSES.includes(status)) {
@@ -1084,7 +1101,11 @@ const getDashboardAnalytics = (rows) => {
     const nature = bucketClaimNature(row['Disease Category'], row['Treatment'], row['Claim Type 1']);
     claimNatureCounts[nature] += 1;
 
-    const statusVal = String(row['Status'] || '').trim();
+    // FIX: use the case/whitespace-insensitive normalizer here too, so a
+    // value like "in process" or " Settled" is credited to the right
+    // canonical status bucket in the "Status by count" / "Status by value"
+    // widgets, instead of being silently skipped by the exact-match check.
+    const statusVal = normalizeStatusValue(row['Status']);
     if (Object.prototype.hasOwnProperty.call(statusCounts, statusVal)) {
       statusCounts[statusVal] += 1;
       const amt = Number(row['Claim Submitted']) || 0;
@@ -1239,7 +1260,8 @@ const MISConverterTool = () => {
   // FIX: "Claims incurred (Paid + Outstanding)" is no longer a manual input.
   // It's computed directly from the uploaded sheet and fed straight into the
   // dashboard widget — see computeClaimsIncurred() above for the rule
-  // (everything except Rejected/Withdrawn).
+  // (everything except Rejected/Withdrawn), which now also normalizes status
+  // casing so variants like "In process" are counted correctly.
   const claimsIncurred = useMemo(
     () => computeClaimsIncurred(insightsRows),
     [insightsRows]
@@ -3213,7 +3235,7 @@ const MISConverterTool = () => {
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
             <li>Step 3 — upload the final file (with any team edits, including the manually filled TAT columns) and enter policy details (company, broker, policy year, premiums, dates, lives) to generate the insights dashboard.</li>
             <li>Premium and lives inputs display Indian-style comma grouping (e.g. 25,00,000) as you type.</li>
-            <li>Claims incurred (Paid + Outstanding) is fully automatic — there's nothing to type in. It's computed straight from the uploaded sheet as the sum of every claim except Rejected and Withdrawn (Settled/Approved use the approved amount, In Process/Under Query use the submitted amount).</li>
+            <li>Claims incurred (Paid + Outstanding) is fully automatic — there's nothing to type in. It's computed straight from the uploaded sheet as the sum of every claim except Rejected and Withdrawn (Settled/Approved use the approved amount, In Process/Under Query use the submitted amount). Status matching now ignores case and stray whitespace, so values like "in process" or " Settled " are counted correctly instead of being dropped.</li>
             <li>Policy start/end dates auto-fill each other assuming a 12-month policy; tick "custom / non-annual policy duration" to enter a 6-9 month (or any other) period manually on both ends.</li>
             <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
             <li>Tick "Existing Client" to capture App Activation %, Doctel Activated Users, and Total H&amp;W Benefits Utilised — shown as a single-row, 3-column table at the end of the dashboard.</li>
