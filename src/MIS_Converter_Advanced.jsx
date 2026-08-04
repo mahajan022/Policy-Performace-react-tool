@@ -864,18 +864,38 @@ const COMMON_UNDERLYING_COLUMNS = [
 const CLAIMS_INCURRED_EXCLUDED_STATUSES = ['Rejected', 'Withdrawn'];
 
 const computeClaimsIncurredAuto = (rows) => {
-  if (!rows || rows.length === 0) return 0;
-  let total = 0;
+// ============================================================================
+// NEW: SUGGESTED CLAIMS INCURRED (Paid + Outstanding) — used to autofill the
+// "Claims incurred (Paid + Outstanding)" field from the uploaded sheet.
+// Paid = sum of "Claim Approved" for Settled claims.
+// Outstanding = sum of "Claim Submitted" for In Process / Under Query / Approved claims.
+// Returns null if there's no data to base a suggestion on.
+// ============================================================================
+const OUTSTANDING_STATUSES = ['In Process', 'Under Query', 'Approved'];
+
+const computeSuggestedClaimsIncurred = (rows) => {
+  if (!rows || rows.length === 0) return null;
+
+  let paid = 0;
+  let outstanding = 0;
+  let hasRelevantRow = false;
 
   rows.forEach(row => {
     const status = String(row['Status'] || '').trim();
-    if (CLAIMS_INCURRED_EXCLUDED_STATUSES.includes(status)) return;
-    total += Number(row['Claim Submitted']) || 0;
+
+    if (status === 'Settled') {
+      paid += Number(row['Claim Approved']) || 0;
+      hasRelevantRow = true;
+    } else if (OUTSTANDING_STATUSES.includes(status)) {
+      outstanding += Number(row['Claim Submitted']) || 0;
+      hasRelevantRow = true;
+    }
   });
 
-  return total;
-};
+  if (!hasRelevantRow) return null;
 
+  return { paid, outstanding, total: paid + outstanding };
+};
 // ============================================================================
 // NEW: DEDUCTION % CALCULATION
 // ============================================================================
