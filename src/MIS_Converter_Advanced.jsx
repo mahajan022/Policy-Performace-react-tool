@@ -64,8 +64,8 @@ const fmtNumber = (v) => {
 };
 
 // ============================================================================
-// NEW: INDIAN-STYLE COMMA-FORMATTED NUMBER INPUT HELPERS
-// Used so premium / claims / lives inputs show "25,00,000" style commas
+// INDIAN-STYLE COMMA-FORMATTED NUMBER INPUT HELPERS
+// Used so premium / lives inputs show "25,00,000" style commas
 // while the underlying state value stays a plain numeric string.
 // ============================================================================
 const formatIndianInputValue = (value) => {
@@ -122,7 +122,7 @@ const IndianNumberField = ({ value, onChange, placeholder }) => {
 };
 
 // ============================================================================
-// NEW: LEAP YEAR & DATE HANDLING
+// LEAP YEAR & DATE HANDLING
 // ============================================================================
 const isLeapYear = (year) => (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
 
@@ -150,7 +150,7 @@ const subtractDays = (dateString, days) => {
 };
 
 // ============================================================================
-// UPDATED: AGE FROM DOB & DATE FORMATTING
+// AGE FROM DOB & DATE FORMATTING
 // ============================================================================
 const ageFromDob = (value) => {
   if (!(value instanceof Date) || isNaN(value.getTime())) return value;
@@ -558,8 +558,7 @@ const CopyImageButton = ({ getNode, filenameBase, background }) => {
 };
 
 // ============================================================================
-// NEW: CURRENCY COLUMNS THAT SHOULD BE SHOWN WITH INDIAN COMMA FORMATTING
-// IN THE "UNDERLYING DATA" TABLE (Claim Submitted, Claim Approved, etc.)
+// CURRENCY COLUMNS SHOWN WITH INDIAN COMMA FORMATTING IN "UNDERLYING DATA"
 // ============================================================================
 const CURRENCY_UNDERLYING_COLUMNS = new Set([
   'Claim Submitted', 'Claim Approved', 'Deduction Amt', 'CO-PAY',
@@ -754,6 +753,10 @@ const bucketAge = (value) => {
   return bracket ? bracket.label : 'Unknown';
 };
 
+// UPDATED: 'member' now maps to Self — previously a raw value of "Member" in
+// the benef_relation column fell through to "Other" because there was no
+// keyword covering it. "Self" is the primary insured/employee themself, and
+// "Member" is commonly used by insurers/TPAs to mean the same thing.
 const RELATION_KEYWORDS = {
   Self: ['self', 'member'],
   Spouse: ['spouse', 'wife', 'husband'],
@@ -855,49 +858,43 @@ const COMMON_UNDERLYING_COLUMNS = [
 ];
 
 // ============================================================================
-// UPDATED: CLAIMS INCURRED IS NOW FULLY AUTO-COMPUTED — NOT A MANUAL INPUT.
-// Claims Incurred = sum of "Claim Submitted" for every row EXCEPT rows whose
-// Status is Rejected or Withdrawn. No user input is involved; this value
-// feeds straight into the "Claims incurred (Paid + O/S)" widget and the
-// annualized-claims / loss-ratio calculations.
+// CLAIMS INCURRED (PAID + OUTSTANDING) — AUTO-COMPUTED, NOT A MANUAL INPUT
+// Per the fix requested: this is no longer a free-text field the user types
+// a number into. It's computed directly from the uploaded sheet and shown
+// straight in the dashboard widget.
+//
+// Rule: sum every claim EXCEPT those with Status = "Rejected" or "Withdrawn".
+//   - Settled / Approved claims  -> use the Claim Approved amount
+//   - In Process / Under Query   -> use the Claim Submitted amount
+//     (nothing has been approved yet, so the submitted amount is the best
+//     estimate of what's outstanding)
 // ============================================================================
+const CLAIMS_INCURRED_APPROVED_STATUSES = ['Settled', 'Approved'];
+const CLAIMS_INCURRED_SUBMITTED_STATUSES = ['In Process', 'Under Query'];
 const CLAIMS_INCURRED_EXCLUDED_STATUSES = ['Rejected', 'Withdrawn'];
 
-const computeClaimsIncurredAuto = (rows) => {
-// ============================================================================
-// NEW: SUGGESTED CLAIMS INCURRED (Paid + Outstanding) — used to autofill the
-// "Claims incurred (Paid + Outstanding)" field from the uploaded sheet.
-// Paid = sum of "Claim Approved" for Settled claims.
-// Outstanding = sum of "Claim Submitted" for In Process / Under Query / Approved claims.
-// Returns null if there's no data to base a suggestion on.
-// ============================================================================
-const OUTSTANDING_STATUSES = ['In Process', 'Under Query', 'Approved'];
-
-const computeSuggestedClaimsIncurred = (rows) => {
-  if (!rows || rows.length === 0) return null;
-
-  let paid = 0;
-  let outstanding = 0;
-  let hasRelevantRow = false;
+const computeClaimsIncurred = (rows) => {
+  if (!rows || rows.length === 0) return 0;
+  let total = 0;
 
   rows.forEach(row => {
     const status = String(row['Status'] || '').trim();
+    if (CLAIMS_INCURRED_EXCLUDED_STATUSES.includes(status)) return;
 
-    if (status === 'Settled') {
-      paid += Number(row['Claim Approved']) || 0;
-      hasRelevantRow = true;
-    } else if (OUTSTANDING_STATUSES.includes(status)) {
-      outstanding += Number(row['Claim Submitted']) || 0;
-      hasRelevantRow = true;
+    if (CLAIMS_INCURRED_APPROVED_STATUSES.includes(status)) {
+      total += Number(row['Claim Approved']) || 0;
+    } else if (CLAIMS_INCURRED_SUBMITTED_STATUSES.includes(status)) {
+      total += Number(row['Claim Submitted']) || 0;
     }
+    // Any other/unrecognized status is neither excluded nor bucketed above —
+    // intentionally not added, since we don't know if it's paid or pending.
   });
 
-  if (!hasRelevantRow) return null;
-
-  return { paid, outstanding, total: paid + outstanding };
+  return total;
 };
+
 // ============================================================================
-// NEW: DEDUCTION % CALCULATION
+// DEDUCTION % CALCULATION
 // ============================================================================
 const calculateDeductionPercentage = (rows) => {
   const buckets = {
@@ -934,7 +931,7 @@ const calculateDeductionPercentage = (rows) => {
 };
 
 // ============================================================================
-// NEW: SI UTILIZATION CALCULATION
+// SI UTILIZATION CALCULATION
 // ============================================================================
 const calculateSIUtilization = (rows) => {
   const buckets = {
@@ -973,73 +970,65 @@ const calculateSIUtilization = (rows) => {
 };
 
 // ============================================================================
-// UPDATED: REIMBURSEMENT TAT CALCULATION
-// Returns null (not 0) for a metric when there's no valid data for it yet, so
-// the UI can show a proper "not available" state instead of a misleading
-// flat 0-day bar while the team hasn't filled in Discharge/LDR/Settlement
-// dates in the MIS. Once those dates are filled, real averages will show up.
+// REIMBURSEMENT TAT — NO FORMULA
+// Per the fix requested: TAT is no longer calculated from date subtraction
+// (Date of Discharge / LDR / Date of Settlement). Instead, the team fills in
+// the TAT (in days) manually, directly into two dedicated columns —
+// "Discharge to LDR" and "LDR to Settlement" — inside the downloaded
+// Healthysure-format Excel file. This function just reads those two columns
+// back out of whatever file gets uploaded for insights, and averages
+// whichever rows actually have a manually-entered numeric value.
 // ============================================================================
+const isFilledNumber = (v) => v !== '' && v !== undefined && v !== null && !isNaN(Number(v));
+
 const calculateReimbTAT = (rows) => {
-  const dischargeToLDR = [];
-  const ldrToSettlement = [];
+  const dischargeToLDRValues = [];
+  const ldrToSettlementValues = [];
 
   rows.forEach(row => {
-    const dischargeDate = row['Date of Discharge'];
-    const ldrDate = row['LDR'];
-    const settlementDate = row['Date of Settlement'];
+    const v1 = row['Discharge to LDR'];
+    if (isFilledNumber(v1)) dischargeToLDRValues.push(Number(v1));
 
-    if (dischargeDate && ldrDate) {
-      const d1 = new Date(dischargeDate);
-      const d2 = new Date(ldrDate);
-      const days = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-      if (days >= 0) dischargeToLDR.push(days);
-    }
-
-    if (ldrDate && settlementDate) {
-      const d1 = new Date(ldrDate);
-      const d2 = new Date(settlementDate);
-      const days = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-      if (days >= 0) ldrToSettlement.push(days);
-    }
+    const v2 = row['LDR to Settlement'];
+    if (isFilledNumber(v2)) ldrToSettlementValues.push(Number(v2));
   });
 
-  const avgDischargeToLDR = dischargeToLDR.length > 0
-    ? Math.round(dischargeToLDR.reduce((a, b) => a + b) / dischargeToLDR.length)
+  const avgDischargeToLDR = dischargeToLDRValues.length > 0
+    ? Math.round(dischargeToLDRValues.reduce((a, b) => a + b, 0) / dischargeToLDRValues.length)
     : null;
 
-  const avgLDRToSettlement = ldrToSettlement.length > 0
-    ? Math.round(ldrToSettlement.reduce((a, b) => a + b) / ldrToSettlement.length)
+  const avgLDRToSettlement = ldrToSettlementValues.length > 0
+    ? Math.round(ldrToSettlementValues.reduce((a, b) => a + b, 0) / ldrToSettlementValues.length)
     : null;
 
   return {
     avgDischargeToLDR,
     avgLDRToSettlement,
-    dischargeToLDRSampleSize: dischargeToLDR.length,
-    ldrToSettlementSampleSize: ldrToSettlement.length
+    dischargeToLDRSampleSize: dischargeToLDRValues.length,
+    ldrToSettlementSampleSize: ldrToSettlementValues.length
   };
 };
 
 // ============================================================================
-// UPDATED: ANNUALIZED CLAIMS FORMULA
+// ANNUALIZED CLAIMS FORMULA
 // ============================================================================
-const computeAnnualizedClaims = (claimsPaid, completedDays, outstandingClaims = 0) => {
-  // Claims Incurred = Claims Paid + Outstanding
-  const claimsIncurred = (Number(claimsPaid) || 0) + (Number(outstandingClaims) || 0);
+const computeAnnualizedClaims = (claimsIncurred, completedDays) => {
+  const incurred = Number(claimsIncurred) || 0;
 
   // IBNR = Claims Incurred × 4%
-  const ibnr = claimsIncurred * 0.04;
+  const ibnr = incurred * 0.04;
 
   // Total Claims = Claims Incurred + IBNR
-  const totalClaims = claimsIncurred + ibnr;
+  const totalClaims = incurred + ibnr;
 
   // Annualized Claims = Total Claims × (365 / Policy Completed Days)
   const annualizedClaims = completedDays ? (totalClaims * 365) / completedDays : null;
 
-  return { claimsIncurred, ibnr, totalClaims, annualizedClaims };
+  return { claimsIncurred: incurred, ibnr, totalClaims, annualizedClaims };
 };
 
 // ============================================================================
-// UPDATED: GET DASHBOARD ANALYTICS
+// GET DASHBOARD ANALYTICS
 // ============================================================================
 const getDashboardAnalytics = (rows) => {
   const claimTypeCounts = { Cashless: 0, Reimbursement: 0, Other: 0 };
@@ -1156,9 +1145,9 @@ const daysBetween = (later, earlier) => Math.round((later - earlier) / (1000 * 6
 // ============================================================================
 // LOSS RATIO CALCULATION
 // ============================================================================
-const computeLossRatio = ({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate }) => {
+const computeLossRatio = ({ inceptionPremium, endorsementPremium, claimsIncurred, reportDate, policyStartDate, policyEndDate }) => {
   const netPremium = (Number(inceptionPremium) || 0) + (Number(endorsementPremium) || 0);
-  const claims = Number(claimsPaid) || 0;
+  const claims = Number(claimsIncurred) || 0;
 
   const rd = parseDateInput(reportDate);
   const sd = parseDateInput(policyStartDate);
@@ -1216,7 +1205,6 @@ const MISConverterTool = () => {
   const [policyYear, setPolicyYear] = useState('');
   const [inceptionPremium, setInceptionPremium] = useState('');
   const [endorsementPremium, setEndorsementPremium] = useState('');
-  const [claimsPaid, setClaimsPaid] = useState('');
   const [reportDate, setReportDate] = useState('');
   const [policyStartDate, setPolicyStartDate] = useState('');
   const [policyEndDate, setPolicyEndDate] = useState('');
@@ -1224,12 +1212,12 @@ const MISConverterTool = () => {
   const [expiringLives, setExpiringLives] = useState('');
   const [insightsFieldsError, setInsightsFieldsError] = useState('');
 
-  // NEW: when checked, the Policy Start/End date fields stop auto-syncing each
+  // When checked, the Policy Start/End date fields stop auto-syncing each
   // other (no more forced 365-day gap). Meant for short/non-annual policies
   // (e.g. a 6-9 month policy) where the two dates shouldn't be linked.
   const [customPolicyDuration, setCustomPolicyDuration] = useState(false);
 
-  // NEW: "Existing Clients" extra metrics — shown as a checkbox at the end of
+  // "Existing Clients" extra metrics — shown as a checkbox at the end of
   // the policy details form. When checked, three extra fields appear and are
   // later rendered as a single-row, 3-column table (not a chart) at the very
   // end of the insights dashboard.
@@ -1248,10 +1236,12 @@ const MISConverterTool = () => {
   const dashboardExportRef = useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
 
-  // NEW: auto-calculated Paid + Outstanding suggestion from the uploaded sheet,
-  // used to autofill "Claims incurred (Paid + Outstanding)" instead of typing it.
-  const suggestedClaimsIncurred = useMemo(
-    () => computeSuggestedClaimsIncurred(insightsRows),
+  // FIX: "Claims incurred (Paid + Outstanding)" is no longer a manual input.
+  // It's computed directly from the uploaded sheet and fed straight into the
+  // dashboard widget — see computeClaimsIncurred() above for the rule
+  // (everything except Rejected/Withdrawn).
+  const claimsIncurred = useMemo(
+    () => computeClaimsIncurred(insightsRows),
     [insightsRows]
   );
 
@@ -1271,6 +1261,10 @@ const MISConverterTool = () => {
     "HDFC ERGO"
   ];
 
+  // NEW: two extra columns appended at the end of the Healthysure format.
+  // These are intentionally left blank on conversion — no insurer maps to
+  // them — so the team can manually type the TAT (in days) straight into
+  // the downloaded Excel file, one row at a time.
   const healthysureColumns = [
     "Claim No",
     "Status",
@@ -1307,7 +1301,9 @@ const MISConverterTool = () => {
     "Date of Rejection",
     "Date of Settlement",
     "benef_gender",
-    "benef_relation"
+    "benef_relation",
+    "Discharge to LDR",
+    "LDR to Settlement"
   ];
 
   const columnMapping = {
@@ -1931,6 +1927,9 @@ const MISConverterTool = () => {
           });
         });
 
+        // "Discharge to LDR" and "LDR to Settlement" are never populated from
+        // the source file — they stay blank so the team can fill in the TAT
+        // (in days) manually after reviewing each claim.
         return newRow;
       });
 
@@ -2059,10 +2058,10 @@ const MISConverterTool = () => {
     }
   };
 
-  // UPDATED: EVENT HANDLERS FOR AUTO DATE FILL — now respects the
-  // "custom policy duration" toggle. When that toggle is ON, changing one
-  // date no longer overwrites the other, so a 6-9 month (or any non-annual)
-  // policy period can be entered manually on both ends.
+  // EVENT HANDLERS FOR AUTO DATE FILL — respects the "custom policy
+  // duration" toggle. When that toggle is ON, changing one date no longer
+  // overwrites the other, so a 6-9 month (or any non-annual) policy period
+  // can be entered manually on both ends.
   const handlePolicyStartDateChange = (e) => {
     const startDate = e.target.value;
     setPolicyStartDate(startDate);
@@ -2098,7 +2097,6 @@ const MISConverterTool = () => {
       policyYear === '' ||
       inceptionPremium === '' ||
       endorsementPremium === '' ||
-      claimsPaid === '' ||
       reportDate === '' ||
       !hasDateAnchor ||
       inceptionLives === '' ||
@@ -2128,7 +2126,6 @@ const MISConverterTool = () => {
     setPolicyYear('');
     setInceptionPremium('');
     setEndorsementPremium('');
-    setClaimsPaid('');
     setReportDate('');
     setPolicyStartDate('');
     setPolicyEndDate('');
@@ -2172,7 +2169,7 @@ const MISConverterTool = () => {
 
       const nodeRect = node.getBoundingClientRect();
 
-      // NEW: page margins so the PDF isn't an edge-to-edge screenshot.
+      // Page margins so the PDF isn't an edge-to-edge screenshot.
       // PDF_MARGIN is in jsPDF "pt" units (~10mm on all sides).
       const PDF_MARGIN = 28;
 
@@ -2501,9 +2498,10 @@ const MISConverterTool = () => {
                 <span>Your file has been downloaded.</span>
               </p>
               <p style={styles.description}>
-                If your team made any edits to the downloaded file, make those changes and upload the
-                final version here. The dashboard is built from whatever file you upload —
-                not from the original conversion.
+                If your team made any edits to the downloaded file — including manually filling in the
+                "Discharge to LDR" and "LDR to Settlement" TAT columns — make those changes and upload the
+                final version here. The dashboard is built from whatever file you upload — not from the
+                original conversion.
               </p>
               {insightsError && (
                 <div style={styles.errorBox}>
@@ -2565,8 +2563,10 @@ const MISConverterTool = () => {
                   <h2 style={styles.sectionTitle}>Policy details</h2>
                   <p style={styles.description}>
                     Enter the policy details below — these are shown as widgets at the top of the
-                    insights dashboard, alongside the charts. Net Premium, Earned Premium, and the Loss
-                    Ratios are calculated automatically from these inputs.
+                    insights dashboard, alongside the charts. Net Premium, Earned Premium, Claims Incurred,
+                    and the Loss Ratios are all calculated automatically — Claims Incurred in particular is
+                    computed straight from the uploaded sheet (every claim except Rejected/Withdrawn), so
+                    there's nothing to type in for it.
                   </p>
                   {insightsFieldsError && (
                     <div style={styles.errorBox}>
@@ -2625,27 +2625,6 @@ const MISConverterTool = () => {
                       />
                     </div>
                     <div style={styles.fieldGroup}>
-                      <label style={styles.fieldLabel}>Claims incurred (Paid + Outstanding) (₹)</label>
-                      <IndianNumberField
-                        value={claimsPaid}
-                        onChange={setClaimsPaid}
-                        placeholder="e.g. 25,40,053"
-                      />
-                      {suggestedClaimsIncurred && (
-                        <button
-                          type="button"
-                          onClick={() => setClaimsPaid(String(Math.round(suggestedClaimsIncurred.total)))}
-                          className="mis-btn mis-btn-outline"
-                          style={styles.autofillBtn}
-                        >
-                          Autofill from sheet: {fmtCurrency(suggestedClaimsIncurred.total)}
-                          <span style={styles.autofillBtnSub}>
-                            (Paid {fmtCurrency(suggestedClaimsIncurred.paid)} + Outstanding {fmtCurrency(suggestedClaimsIncurred.outstanding)})
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                    <div style={styles.fieldGroup}>
                       <label style={styles.fieldLabel}>Claims MIS report generation date</label>
                       <input
                         type="date"
@@ -2693,7 +2672,7 @@ const MISConverterTool = () => {
                     </div>
                   </div>
 
-                  {/* NEW: toggle to break the Start/End date 365-day auto-sync,
+                  {/* Toggle to break the Start/End date 365-day auto-sync,
                       for short / non-annual policies (e.g. 6-9 months). When
                       checked, both dates can be set independently. */}
                   <label style={styles.inlineCheckboxLabel}>
@@ -2706,7 +2685,7 @@ const MISConverterTool = () => {
                     <span>This is a custom / non-annual policy duration (e.g. 6-9 months) — don't auto-fill the other date</span>
                   </label>
 
-                  {/* NEW: Existing Clients checkbox — appears last, before "View insights".
+                  {/* "Existing Clients" checkbox — appears last, before "View insights".
                       When checked, three extra fields appear for existing-client metrics. */}
                   <label style={styles.inlineCheckboxLabel}>
                     <input
@@ -2771,8 +2750,8 @@ const MISConverterTool = () => {
 
         {step === 'dashboard' && insightsRows && (() => {
           const a = getDashboardAnalytics(insightsRows);
-          const lr = computeLossRatio({ inceptionPremium, endorsementPremium, claimsPaid, reportDate, policyStartDate, policyEndDate });
-          const annualized = computeAnnualizedClaims(claimsPaid, lr.completedDays);
+          const lr = computeLossRatio({ inceptionPremium, endorsementPremium, claimsIncurred, reportDate, policyStartDate, policyEndDate });
+          const annualized = computeAnnualizedClaims(claimsIncurred, lr.completedDays);
 
           return (
             <div style={styles.card}>
@@ -2842,8 +2821,11 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalValue}>{fmtDays(lr.balanceDays)}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
+                    {/* FIX: Claims Incurred is now always auto-computed straight from
+                        the uploaded sheet (Rejected/Withdrawn excluded) — no manual
+                        input feeding this widget anymore. */}
                     <div style={styles.policyTotalLabel}>Claims incurred (Paid + O/S)</div>
-                    <div style={styles.policyTotalValue}>{claimsPaid !== '' ? fmtCurrency(annualized.claimsIncurred) : '—'}</div>
+                    <div style={styles.policyTotalValue}>{fmtCurrency(annualized.claimsIncurred)}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
                     <div style={styles.policyTotalLabel}>Annualized claims</div>
@@ -2905,12 +2887,14 @@ const MISConverterTool = () => {
                     )}
                   />
 
-                  {/* 2a. Reimbursement TAT — Discharge to LDR (own card) */}
+                  {/* 2a. Reimbursement TAT — Discharge to LDR (own card).
+                      FIX: no longer computed via date subtraction — this reads
+                      straight from the manually-filled "Discharge to LDR" column. */}
                   <ChartCard
                     title="Reimbursement TAT Part A - Discharge to LDR"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
-                    insightsColumns={['Date of Discharge', 'LDR']}
+                    insightsColumns={['Discharge to LDR']}
                     renderChart={(h) => (
                       a.reimbTAT.avgDischargeToLDR !== null ? (
                         <ResponsiveContainer width="100%" height={h}>
@@ -2930,19 +2914,21 @@ const MISConverterTool = () => {
                       ) : (
                         <div style={styles.noDataBox}>
                           <p style={{ margin: 0 }}>
-                            TAT not available yet — this will populate once "Date of Discharge" and "LDR" are filled in for claims in the MIS.
+                            TAT not available yet — the team fills this in manually in the "Discharge to LDR" column of the Healthysure-converted Excel file. Once at least one row has a value there, it will show up here.
                           </p>
                         </div>
                       )
                     )}
                   />
 
-                  {/* 2b. Reimbursement TAT — LDR to Settlement (own card) */}
+                  {/* 2b. Reimbursement TAT — LDR to Settlement (own card).
+                      FIX: reads straight from the manually-filled
+                      "LDR to Settlement" column, no date-based formula. */}
                   <ChartCard
                     title="Reimbursement TAT Part B - LDR to Settlement"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
-                    insightsColumns={['LDR', 'Date of Settlement']}
+                    insightsColumns={['LDR to Settlement']}
                     renderChart={(h) => (
                       a.reimbTAT.avgLDRToSettlement !== null ? (
                         <ResponsiveContainer width="100%" height={h}>
@@ -2962,7 +2948,7 @@ const MISConverterTool = () => {
                       ) : (
                         <div style={styles.noDataBox}>
                           <p style={{ margin: 0 }}>
-                            TAT not available yet — this will populate once "LDR" and "Date of Settlement" are filled in for claims in the MIS.
+                            TAT not available yet — the team fills this in manually in the "LDR to Settlement" column of the Healthysure-converted Excel file. Once at least one row has a value there, it will show up here.
                           </p>
                         </div>
                       )
@@ -3139,9 +3125,9 @@ const MISConverterTool = () => {
 
                 </div>
 
-                {/* NEW: Existing Client Metrics — single-row, 3-column colored table,
+                {/* Existing Client Metrics — single-row, 3-column colored table,
                     shown only if "Existing Client" was checked. Placed last, after
-                    every chart, as requested. This is a table, not a chart. */}
+                    every chart. This is a table, not a chart. */}
                 {isExistingClient && (
                   <div style={styles.statGroupBox} data-pdf-block="true">
                     <div style={styles.statGroupTitle}>Existing client metrics</div>
@@ -3223,15 +3209,17 @@ const MISConverterTool = () => {
             <li>Step 1 — select the insurer and upload their raw MIS Excel file.</li>
             <li>Step 2 — review the file details and convert to Healthysure format.</li>
             <li>Columns, status, and gender terms are mapped automatically from Healthysure's mapping sheet.</li>
+            <li>The converted Excel now includes two extra blank columns — "Discharge to LDR" and "LDR to Settlement" — for the team to fill in TAT (in days) manually, claim by claim.</li>
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
-            <li>Step 3 — upload the final file (with any team edits) and enter policy details (company, broker, policy year, premiums, claims paid, dates, lives) to generate the insights dashboard.</li>
-            <li>Premium, claims, and lives inputs now display Indian-style comma grouping (e.g. 25,00,000) as you type.</li>
-            <li>Claims incurred (Paid + Outstanding) can be autofilled directly from the uploaded sheet — Paid comes from Settled claims' approved amount, Outstanding from In Process / Under Query / Approved claims' submitted amount — or entered manually.</li>
+            <li>Step 3 — upload the final file (with any team edits, including the manually filled TAT columns) and enter policy details (company, broker, policy year, premiums, dates, lives) to generate the insights dashboard.</li>
+            <li>Premium and lives inputs display Indian-style comma grouping (e.g. 25,00,000) as you type.</li>
+            <li>Claims incurred (Paid + Outstanding) is fully automatic — there's nothing to type in. It's computed straight from the uploaded sheet as the sum of every claim except Rejected and Withdrawn (Settled/Approved use the approved amount, In Process/Under Query use the submitted amount).</li>
             <li>Policy start/end dates auto-fill each other assuming a 12-month policy; tick "custom / non-annual policy duration" to enter a 6-9 month (or any other) period manually on both ends.</li>
             <li>Net Premium, Earned Premium, Loss Ratio (with/without 4% IBNR), and Annualized Claims are all calculated automatically from those inputs plus the claim status data.</li>
             <li>Tick "Existing Client" to capture App Activation %, Doctel Activated Users, and Total H&amp;W Benefits Utilised — shown as a single-row, 3-column table at the end of the dashboard.</li>
             <li>Dashboard covers: status by count/value, annualized claims, claim type, reimbursement TAT (Discharge→LDR and LDR→Settlement shown as two separate charts), age, relationship, disease, claim nature, rejections, and state/city claims labeled with each state's top city.</li>
-            <li>The two Reimbursement TAT charts show "not available yet" until the team fills in Discharge Date / LDR / Settlement Date in the MIS — they auto-populate once that data is present.</li>
+            <li>The two Reimbursement TAT charts no longer use a date-based formula — they show "not available yet" until the team manually fills in the "Discharge to LDR" / "LDR to Settlement" columns in the converted Excel, and auto-populate once those columns have values.</li>
+            <li>Relationship-wise split now correctly buckets a "Member" value into "Self", alongside "Self" itself.</li>
             <li>SI Utilization chart always displays to show percentage of sum insured used by claims.</li>
             <li>Deduction % chart always displays on the dashboard. The checkbox below the "Download full dashboard as PDF" button only controls whether it's included in the exported PDF — it always shows in the web tool.</li>
             <li>Every chart card has a "view underlying data" icon — click it to see the raw rows, with currency columns (Claim Submitted, Claim Approved, etc.) shown with Indian comma formatting. This table always includes S.No, Employee ID, Employee Name, Raised For, Relationship, Date of Birth, Status, Claims Submitted, and Approved Amount, plus the column(s) that specific chart depends on.</li>
@@ -3449,16 +3437,7 @@ const styles = {
     borderRadius: '7px', cursor: 'pointer', fontFamily: 'inherit'
   },
 
-  // NEW: small autofill hint button under the Claims Incurred field
-  autofillBtn: {
-    marginTop: '8px', width: '100%', padding: '9px 12px', fontSize: '11.5px', fontWeight: 700,
-    color: COLORS.accentDeep, backgroundColor: COLORS.mint, border: `1.5px dashed ${COLORS.accent}`,
-    borderRadius: '7px', cursor: 'pointer', fontFamily: 'inherit',
-    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', textAlign: 'left'
-  },
-  autofillBtnSub: { fontSize: '10.5px', fontWeight: 500, color: COLORS.textSecondary },
-
-  // NEW: inline checkbox row style used for "custom policy duration" and
+  // Inline checkbox row style used for "custom policy duration" and
   // "Existing Client" toggles
   inlineCheckboxLabel: {
     display: 'flex',
@@ -3577,7 +3556,7 @@ const styles = {
   statValue: { fontSize: '21px', fontWeight: 800, color: COLORS.accentDeep, fontVariantNumeric: 'tabular-nums' },
   statLabel: { fontSize: '10px', color: COLORS.accentDeep, fontWeight: 700, textTransform: 'uppercase', marginTop: '4px', letterSpacing: '0.3px', opacity: 0.75 },
 
-  // NEW: Existing Client Metrics table (single row, 3 distinctly colored columns)
+  // Existing Client Metrics table (single row, 3 distinctly colored columns)
   existingClientTable: { width: '100%', borderCollapse: 'separate', borderSpacing: '10px 0' },
   existingClientHeaderCell: {
     padding: '10px 14px', textAlign: 'center', color: '#ffffff', fontSize: '11px',
@@ -3625,8 +3604,6 @@ const styles = {
   },
   dashboardGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '20px' },
 
-  // FIX: this style was referenced in JSX but never defined, which is why the
-  // checkbox below the "Download PDF" button wasn't showing up correctly.
   deductionPdfCheckboxLabel: {
     display: 'flex',
     alignItems: 'center',
