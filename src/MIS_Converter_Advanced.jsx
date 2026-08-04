@@ -163,9 +163,9 @@ const ageFromDob = (value) => {
 
 const formatDateValue = (value) => {
   if (!(value instanceof Date) || isNaN(value.getTime())) return value;
-  const dd = String(value.getUTCDate()).padStart(2, '0');
-  const mmm = MONTH_ABBR[value.getUTCMonth()];
-  return `${dd}-${mmm}-${value.getUTCFullYear()}`;
+  const dd = String(value.getDate()).padStart(2, '0');
+  const mmm = MONTH_ABBR[value.getMonth()];
+  return `${dd}-${mmm}-${value.getFullYear()}`;
 };
 
 // ============================================================================
@@ -1895,6 +1895,8 @@ const MISConverterTool = () => {
     return value;
   };
 
+  const isBlankValue = (value) => value === '' || value === undefined || value === null;
+
   const handleConvert = async () => {
     if (!selectedInsurer || !uploadedFile) {
       setError('Please select an insurer and upload a file');
@@ -1938,7 +1940,9 @@ const MISConverterTool = () => {
           if (!targetCol) return;
           const targets = Array.isArray(targetCol) ? targetCol : [targetCol];
           targets.forEach(t => {
-            newRow[t] = applyTerminology(t, srcRow[sourceCol]);
+            const mappedValue = applyTerminology(t, srcRow[sourceCol]);
+            if (isBlankValue(mappedValue) && !isBlankValue(newRow[t])) return;
+            newRow[t] = mappedValue;
           });
         });
 
