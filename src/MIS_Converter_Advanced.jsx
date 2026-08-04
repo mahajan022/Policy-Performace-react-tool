@@ -755,7 +755,7 @@ const bucketAge = (value) => {
 };
 
 const RELATION_KEYWORDS = {
-  Self: ['self'],
+  Self: ['self', 'member'],
   Spouse: ['spouse', 'wife', 'husband'],
   Children: ['son', 'daughter', 'child'],
   Parent: ['father', 'mother', 'parent']
@@ -855,35 +855,25 @@ const COMMON_UNDERLYING_COLUMNS = [
 ];
 
 // ============================================================================
-// NEW: STATUS BUCKETS FOR AUTO-CALCULATING CLAIMS INCURRED (PAID + OUTSTANDING)
+// UPDATED: CLAIMS INCURRED IS NOW FULLY AUTO-COMPUTED — NOT A MANUAL INPUT.
+// Claims Incurred = sum of "Claim Submitted" for every row EXCEPT rows whose
+// Status is Rejected or Withdrawn. No user input is involved; this value
+// feeds straight into the "Claims incurred (Paid + O/S)" widget and the
+// annualized-claims / loss-ratio calculations.
 // ============================================================================
-const PAID_STATUS_BUCKET = ['Settled'];
-const OUTSTANDING_STATUS_BUCKET = ['In Process', 'Under Query', 'Approved'];
+const CLAIMS_INCURRED_EXCLUDED_STATUSES = ['Rejected', 'Withdrawn'];
 
-// ============================================================================
-// NEW: AUTOFILL "CLAIMS INCURRED (PAID + OUTSTANDING)" FROM THE UPLOADED SHEET
-// Paid = sum of Claim Approved for Settled claims.
-// Outstanding = sum of Claim Submitted for claims still moving (In Process /
-// Under Query / Approved but not yet settled).
-// ============================================================================
-const computeSuggestedClaimsIncurred = (rows) => {
-  if (!rows || rows.length === 0) return null;
-  let paid = 0;
-  let outstanding = 0;
+const computeClaimsIncurredAuto = (rows) => {
+  if (!rows || rows.length === 0) return 0;
+  let total = 0;
 
   rows.forEach(row => {
     const status = String(row['Status'] || '').trim();
-    const approved = Number(row['Claim Approved']) || 0;
-    const submitted = Number(row['Claim Submitted']) || 0;
-
-    if (PAID_STATUS_BUCKET.includes(status)) {
-      paid += approved;
-    } else if (OUTSTANDING_STATUS_BUCKET.includes(status)) {
-      outstanding += submitted;
-    }
+    if (CLAIMS_INCURRED_EXCLUDED_STATUSES.includes(status)) return;
+    total += Number(row['Claim Submitted']) || 0;
   });
 
-  return { paid, outstanding, total: paid + outstanding };
+  return total;
 };
 
 // ============================================================================
