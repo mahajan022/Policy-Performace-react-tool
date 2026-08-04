@@ -153,11 +153,21 @@ const subtractDays = (dateString, days) => {
 // AGE FROM DOB & DATE FORMATTING
 // ============================================================================
 const ageFromDob = (value) => {
-  if (!(value instanceof Date) || isNaN(value.getTime())) return value;
+  if (typeof value === 'number' && value < 1000) return value;
+
+  let dob = value;
+  if (typeof value === 'number' && isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return value;
+    dob = new Date(parsed.y, parsed.m - 1, parsed.d);
+  }
+
+  if (!(dob instanceof Date) || isNaN(dob.getTime())) return value;
+
   const today = new Date();
-  let age = today.getUTCFullYear() - value.getUTCFullYear();
-  const monthDiff = today.getUTCMonth() - value.getUTCMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < value.getUTCDate())) age--;
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
   return age;
 };
 
@@ -166,6 +176,32 @@ const formatDateValue = (value) => {
   const dd = String(value.getDate()).padStart(2, '0');
   const mmm = MONTH_ABBR[value.getMonth()];
   return `${dd}-${mmm}-${value.getFullYear()}`;
+};
+
+const formatExcelDateValue = (value) => {
+  if (value === '' || value === undefined || value === null) return '';
+
+  if (typeof value === 'number' && isFinite(value)) {
+    return XLSX.SSF.format('dd-mmm-yyyy', value);
+  }
+
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return formatDateValue(value);
+  }
+
+  const text = String(value).trim();
+  const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
+  if (isoDate) {
+    const [, yyyy, mm, dd] = isoDate;
+    return `${dd}-${MONTH_ABBR[Number(mm) - 1]}-${yyyy}`;
+  }
+
+  const parsed = new Date(text);
+  if (!isNaN(parsed.getTime())) {
+    return formatDateValue(parsed);
+  }
+
+  return value;
 };
 
 // ============================================================================
@@ -1885,7 +1921,7 @@ const MISConverterTool = () => {
 
   const applyTerminology = (col, value) => {
     if (value === '' || value === undefined || value === null) return '';
-    if (DATE_COLUMNS.has(col)) return formatDateValue(value);
+    if (DATE_COLUMNS.has(col)) return formatExcelDateValue(value);
     if (col === 'dob / age') return ageFromDob(value);
     const v = String(value).trim();
     if (col === 'Status' && statusMapping[v]) return statusMapping[v];
@@ -1917,7 +1953,7 @@ const MISConverterTool = () => {
 
       setProgress(40);
 
-      const workbook = XLSX.read(fileData, { type: 'array', cellDates: true });
+      const workbook = XLSX.read(fileData, { type: 'array', cellDates: false });
       const worksheetName = pickSheetForInsurer(workbook, selectedInsurer);
       const worksheet = workbook.Sheets[worksheetName];
       const sourceData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
