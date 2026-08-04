@@ -886,9 +886,7 @@ const COMMON_UNDERLYING_COLUMNS = [
 // matches the canonical "In Process" / "Settled" instead of silently falling
 // through as unrecognized and being excluded from the total.
 // ============================================================================
-const CLAIMS_INCURRED_APPROVED_STATUSES = ['Settled', 'Approved'];
-const CLAIMS_INCURRED_SUBMITTED_STATUSES = ['In Process', 'Under Query'];
-const CLAIMS_INCURRED_EXCLUDED_STATUSES = ['Rejected', 'Withdrawn'];
+const CLAIMS_INCURRED_INCLUDED_STATUSES = ['Settled', 'Approved', 'In Process', 'Under Query'];
 
 const computeClaimsIncurred = (rows) => {
   if (!rows || rows.length === 0) return 0;
@@ -896,15 +894,10 @@ const computeClaimsIncurred = (rows) => {
 
   rows.forEach(row => {
     const status = normalizeStatusValue(row['Status']);
-    if (CLAIMS_INCURRED_EXCLUDED_STATUSES.includes(status)) return;
 
-    if (CLAIMS_INCURRED_APPROVED_STATUSES.includes(status)) {
-      total += Number(row['Claim Approved']) || 0;
-    } else if (CLAIMS_INCURRED_SUBMITTED_STATUSES.includes(status)) {
+    if (CLAIMS_INCURRED_INCLUDED_STATUSES.includes(status)) {
       total += Number(row['Claim Submitted']) || 0;
     }
-    // Any other/unrecognized status is neither excluded nor bucketed above —
-    // intentionally not added, since we don't know if it's paid or pending.
   });
 
   return total;
