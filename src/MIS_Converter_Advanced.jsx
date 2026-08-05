@@ -2943,7 +2943,7 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalValue}>{fmtCurrency(annualized.claimsIncurred)}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>1. Annualized Claims (with IBNR)</div>
+                    <div style={styles.policyTotalLabel}>1 Annualized Claims (with IBNR)</div>
                     <div style={styles.policyTotalValue}>{annualized.annualizedClaims !== null ? fmtCurrency(annualized.annualizedClaims) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
