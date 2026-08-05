@@ -2680,7 +2680,7 @@ const MISConverterTool = () => {
                       />
                     </div>
                     <div style={styles.fieldGroup}>
-                      <label style={styles.fieldLabel}>Claims MIS report generation date</label>
+                      <label style={styles.fieldLabel}>Claims MIS Report Date</label>
                       <input
                         type="date"
                         value={reportDate}
@@ -2883,7 +2883,7 @@ const MISConverterTool = () => {
                     <div style={styles.policyTotalValue}>{fmtCurrency(annualized.claimsIncurred)}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
-                    <div style={styles.policyTotalLabel}>Annualized claims</div>
+                    <div style={styles.policyTotalLabel}>1. Annualized Claims (with IBNR)</div>
                     <div style={styles.policyTotalValue}>{annualized.annualizedClaims !== null ? fmtCurrency(annualized.annualizedClaims) : '—'}</div>
                   </div>
                   <div style={styles.policyTotalBox}>
@@ -2946,7 +2946,7 @@ const MISConverterTool = () => {
                       FIX: no longer computed via date subtraction — this reads
                       straight from the manually-filled "Discharge to LDR" column. */}
                   <ChartCard
-                    title="Reimbursement TAT Part A - Discharge to LDR"
+                    title="Reimbursement TAT (Part A) - Discharge to LDR"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['Discharge to LDR']}
@@ -2980,7 +2980,7 @@ const MISConverterTool = () => {
                       FIX: reads straight from the manually-filled
                       "LDR to Settlement" column, no date-based formula. */}
                   <ChartCard
-                    title="Reimbursement TAT Part B - LDR to Settlement"
+                    title="Reimbursement TAT (Part B) - LDR to Settlement"
                     insightsRows={insightsRows}
                     insightsFileName={insightsFile?.name}
                     insightsColumns={['LDR to Settlement']}
