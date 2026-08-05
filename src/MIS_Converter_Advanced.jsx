@@ -889,7 +889,7 @@ const normalizeStatusValue = (raw) => {
 
 // ============================================================================
 // COMMON UNDERLYING-DATA COLUMNS
-// These 9 columns must ALWAYS appear (in this fixed order, first) in the
+// These columns must ALWAYS appear (in this fixed order, first) in the
 // "view underlying data" table for every chart, in addition to whatever
 // columns that specific chart depends on.
 // ============================================================================
@@ -900,10 +900,24 @@ const COMMON_UNDERLYING_COLUMNS = [
   'Insured Person',
   'benef_relation',
   'dob / age',
+  'Date of Discharge',
   'Status',
   'Claim Submitted',
   'Claim Approved'
 ];
+
+// ============================================================================
+// COLUMN HEADER LABEL OVERRIDES — display-only text shown in the exported
+// Healthysure Excel header row. The underlying data KEY stays the plain
+// column name (e.g. "Discharge to LDR") everywhere else in the app (row
+// objects, chart lookups, insightsColumns, etc.) — only the header text
+// shown in row 1 of the downloaded workbook is changed, to make the formula
+// each TAT column represents explicit for whoever fills it in.
+// ============================================================================
+const COLUMN_HEADER_LABELS = {
+  'Discharge to LDR': 'Discharge to LDR (AE - AH)',
+  'LDR to Settlement': 'LDR to Settlement (AH - AJ)'
+};
 
 // ============================================================================
 // CLAIMS INCURRED (PAID + OUTSTANDING) — AUTO-COMPUTED, NOT A MANUAL INPUT
@@ -1998,11 +2012,18 @@ const MISConverterTool = () => {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Healthysure MIS');
 
-      ws.columns = outputColumns.map(col => ({
-        header: col,
-        key: col,
-        width: Math.max(col.length + 4, 14)
-      }));
+      // Header text is overridden for the two TAT columns via
+      // COLUMN_HEADER_LABELS so the sheet spells out which raw columns each
+      // TAT figure is derived from (e.g. "Discharge to LDR (AE - AH)"),
+      // while the underlying row key stays the plain column name.
+      ws.columns = outputColumns.map(col => {
+        const headerLabel = COLUMN_HEADER_LABELS[col] || col;
+        return {
+          header: headerLabel,
+          key: col,
+          width: Math.max(headerLabel.length + 4, 14)
+        };
+      });
 
       rows.forEach(r => ws.addRow(r));
 
@@ -2310,7 +2331,7 @@ const MISConverterTool = () => {
           <div style={styles.brandRow}>
             <img src="/logo.jpeg" alt="Healthysure" style={styles.logo} />
             <div>
-              <h1 style={styles.title}>Performance Analytics Tool</h1>
+              <h1 style={styles.title}>Policy Performance Analysis Tool</h1>
               <p style={styles.subtitle}>Insurer file standardization &amp; claims insights</p>
             </div>
           </div>
@@ -2512,7 +2533,7 @@ const MISConverterTool = () => {
                   <thead>
                     <tr>
                       {outputColumns.map(col => (
-                        <th key={col} style={styles.previewHeaderCell}>{col}</th>
+                        <th key={col} style={styles.previewHeaderCell}>{COLUMN_HEADER_LABELS[col] || col}</th>
                       ))}
                     </tr>
                   </thead>
@@ -3264,7 +3285,7 @@ const MISConverterTool = () => {
             <li>Step 1 — select the insurer and upload their raw MIS Excel file.</li>
             <li>Step 2 — review the file details and convert to Healthysure format.</li>
             <li>Columns, status, and gender terms are mapped automatically from Healthysure's mapping sheet.</li>
-            <li>The converted Excel now includes two extra blank columns — "Discharge to LDR" and "LDR to Settlement" — for the team to fill in TAT (in days) manually, claim by claim.</li>
+            <li>The converted Excel now includes two extra blank columns — "Discharge to LDR (AE - AH)" and "LDR to Settlement (AH - AJ)" — for the team to fill in TAT (in days) manually, claim by claim. The header spells out which raw columns (by letter) each figure is derived from.</li>
             <li>Preview the converted rows, then download — fully colored, filtered, and frozen-header formatted.</li>
             <li>Step 3 — upload the final file (with any team edits, including the manually filled TAT columns) and enter policy details (company, broker, policy year, premiums, dates, lives) to generate the insights dashboard.</li>
             <li>Premium and lives inputs display Indian-style comma grouping (e.g. 25,00,000) as you type.</li>
@@ -3277,7 +3298,7 @@ const MISConverterTool = () => {
             <li>Relationship-wise split now correctly buckets a "Member" value into "Self", alongside "Self" itself.</li>
             <li>SI Utilization chart always displays to show percentage of sum insured used by claims.</li>
             <li>Deduction % chart always displays on the dashboard. The checkbox below the "Download full dashboard as PDF" button only controls whether it's included in the exported PDF — it always shows in the web tool.</li>
-            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows, with currency columns (Claim Submitted, Claim Approved, etc.) shown with Indian comma formatting. This table always includes S.No, Employee ID, Employee Name, Raised For, Relationship, Date of Birth, Status, Claims Submitted, and Approved Amount, plus the column(s) that specific chart depends on.</li>
+            <li>Every chart card has a "view underlying data" icon — click it to see the raw rows, with currency columns (Claim Submitted, Claim Approved, etc.) shown with Indian comma formatting. This table always includes Sr No, Employee ID, Name of Employee, Insured Person, Relationship, Date of Birth/Age, Date of Discharge, Status, Claim Submitted, and Claim Approved, plus the column(s) that specific chart depends on.</li>
             <li>Every chart card also has a copy icon — click it to copy that chart as a PNG straight to your clipboard.</li>
             <li>Click "Download full dashboard as PDF" to save the entire dashboard as a margined, multi-page PDF file.</li>
           </ul>
