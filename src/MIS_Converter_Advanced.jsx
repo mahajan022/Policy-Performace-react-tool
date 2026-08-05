@@ -875,6 +875,24 @@ const bucketClaimNature = (disease, treatment, claimType1) => {
 
 const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Settled', 'Withdrawn' , 'Rejected'];
 
+const STATUS_ALIASES = {
+  'awaiting pending activities': 'In Process',
+  'in process': 'In Process',
+  'in-process': 'In Process',
+  'under process': 'In Process',
+  'outstanding': 'In Process',
+  'claim paid': 'Settled',
+  'paid': 'Settled',
+  'settled': 'Settled',
+  'approved': 'Approved',
+  'under query': 'Under Query',
+  'queried': 'Under Query',
+  'rejected': 'Rejected',
+  'repudiated': 'Rejected',
+  'withdrawn': 'Withdrawn',
+  'closed without payment': 'Withdrawn'
+};
+
 // Case/whitespace-insensitive match against the canonical status list above.
 // Handles variants like "in process", "IN PROCESS", " Settled " etc. — whether
 // they come from a manual edit, a re-uploaded file, or an insurer mapping that
@@ -883,6 +901,8 @@ const ALL_STATUSES = ['In Process', 'Under Query', 'Approved', 'Settled', 'Withd
 // counts, status value sums) works correctly instead of silently dropping them.
 const normalizeStatusValue = (raw) => {
   const trimmed = String(raw || '').trim();
+  const alias = STATUS_ALIASES[trimmed.toLowerCase()];
+  if (alias) return alias;
   const match = ALL_STATUSES.find(s => s.toLowerCase() === trimmed.toLowerCase());
   return match || trimmed;
 };
@@ -938,6 +958,18 @@ const COLUMN_HEADER_LABELS = {
 // ============================================================================
 const CLAIMS_INCURRED_INCLUDED_STATUSES = ['Settled', 'Approved', 'In Process', 'Under Query'];
 
+const getClaimFinancialAmount = (row, status) => {
+  if (status === 'Settled' || status === 'Approved') {
+    return Number(row['Claim Approved']) || 0;
+  }
+
+  if (status === 'In Process' || status === 'Under Query') {
+    return Number(row['Claim Submitted']) || 0;
+  }
+
+  return 0;
+};
+
 const computeClaimsIncurred = (rows) => {
   if (!rows || rows.length === 0) return 0;
   let total = 0;
@@ -946,7 +978,7 @@ const computeClaimsIncurred = (rows) => {
     const status = normalizeStatusValue(row['Status']);
 
     if (CLAIMS_INCURRED_INCLUDED_STATUSES.includes(status)) {
-      total += Number(row['Claim Submitted']) || 0;
+      total += getClaimFinancialAmount(row, status);
     }
   });
 
@@ -1001,7 +1033,8 @@ const calculateSIUtilization = (rows) => {
     '40-60%': 0,
     '60-80%': 0,
     '80-99%': 0,
-    '100%+ (Exceeded)': 0
+    '100% (Fully Used)': 0,
+    '>100% (Exceeded)': 0
   };
 
   rows.forEach(row => {
@@ -1021,7 +1054,8 @@ const calculateSIUtilization = (rows) => {
     else if (percentage <= 60) buckets['40-60%'] += 1;
     else if (percentage <= 80) buckets['60-80%'] += 1;
     else if (percentage < 100) buckets['80-99%'] += 1;
-    else buckets['>100%'] += 1;
+    else if (percentage === 100) buckets['100% (Fully Used)'] += 1;
+    else buckets['>100% (Exceeded)'] += 1;
   });
 
   return Object.entries(buckets)
@@ -1092,6 +1126,7 @@ const computeAnnualizedClaims = (claimsIncurred, completedDays) => {
 // ============================================================================
 const getDashboardAnalytics = (rows) => {
   const claimTypeCounts = { Cashless: 0, Reimbursement: 0, Other: 0 };
+  const claimTypeRatioCounts = { Cashless: 0, Reimbursement: 0 };
   const relationCounts = {};
   const rejectionReasonCounts = {};
   const diseaseCounts = {};
@@ -1105,11 +1140,16 @@ const getDashboardAnalytics = (rows) => {
   let unmatchedStateCount = 0;
 
   rows.forEach(row => {
+    const statusVal = normalizeStatusValue(row['Status']);
     const claimTypeRaw = String(row['Claim Type'] || '').toLowerCase();
     let bucket = 'Other';
     if (claimTypeRaw.includes('cashless')) bucket = 'Cashless';
     else if (claimTypeRaw.includes('reimburs')) bucket = 'Reimbursement';
     claimTypeCounts[bucket] += 1;
+
+    if (bucket !== 'Other' && statusVal !== 'Rejected' && statusVal !== 'Withdrawn') {
+      claimTypeRatioCounts[bucket] += 1;
+    }
 
     const relation = bucketRelation(row['benef_relation']);
     relationCounts[relation] = (relationCounts[relation] || 0) + 1;
@@ -1133,7 +1173,7 @@ const getDashboardAnalytics = (rows) => {
       }
     }
 
-    if (String(row['Status'] || '').toLowerCase() === 'rejected') {
+    if (statusVal === 'Rejected') {
       const reason = String(row['Remark-Rejection'] || '').trim() || 'Unspecified';
       rejectionReasonCounts[reason] = (rejectionReasonCounts[reason] || 0) + 1;
     }
@@ -1148,11 +1188,9 @@ const getDashboardAnalytics = (rows) => {
     // value like "in process" or " Settled" is credited to the right
     // canonical status bucket in the "Status by count" / "Status by value"
     // widgets, instead of being silently skipped by the exact-match check.
-    const statusVal = normalizeStatusValue(row['Status']);
     if (Object.prototype.hasOwnProperty.call(statusCounts, statusVal)) {
       statusCounts[statusVal] += 1;
-      const amt = Number(row['Claim Submitted']) || 0;
-      statusValueSums[statusVal] += amt;
+      statusValueSums[statusVal] += getClaimFinancialAmount(row, statusVal);
     }
   });
 
@@ -1161,8 +1199,8 @@ const getDashboardAnalytics = (rows) => {
     return (limit ? sorted.slice(0, limit) : sorted).map(([name, value]) => ({ name, value }));
   };
 
-  const ratioBase = claimTypeCounts.Cashless + claimTypeCounts.Reimbursement;
-  const cashlessPct = ratioBase ? Math.round((claimTypeCounts.Cashless / ratioBase) * 100) : 0;
+  const ratioBase = claimTypeRatioCounts.Cashless + claimTypeRatioCounts.Reimbursement;
+  const cashlessPct = ratioBase ? Math.round((claimTypeRatioCounts.Cashless / ratioBase) * 100) : 0;
   const reimbursementPct = ratioBase ? 100 - cashlessPct : 0;
 
   return {
@@ -1749,6 +1787,7 @@ const MISConverterTool = () => {
     "Claim Paid": "Settled",
     "Claim Repudiated": "Rejected",
     "Claim document awaited": "In Process",
+    "Awaiting Pending Activities": "In Process",
     "Payment under process": "Approved",
     "Pending claim adjudication": "In Process",
     "Processed - awaiting  insurer concurrence": "In Process",
@@ -1765,7 +1804,7 @@ const MISConverterTool = () => {
     "Cashless In Query": "Approved",
     "Reimbursement In Query": "Under Query",
     "Cashless Issued": "Approved",
-    "Reimbursement in Process": "In process",
+    "Reimbursement in Process": "In Process",
     "Cashless in Process": "Approved",
     "Reimbursement Approved": "Approved",
     "Rejected": "Rejected",
