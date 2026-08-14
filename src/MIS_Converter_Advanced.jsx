@@ -947,9 +947,8 @@ const COLUMN_HEADER_LABELS = {
 //
 // Rule: sum every claim EXCEPT those with Status = "Rejected" or "Withdrawn".
 //   - Settled / Approved claims  -> use the Claim Approved amount
-//   - In Process / Under Query   -> use the Claim Submitted amount
-//     (nothing has been approved yet, so the submitted amount is the best
-//     estimate of what's outstanding)
+//   - In Process                 -> use the Claim Approved amount
+//   - Under Query                -> use the Claim Submitted amount
 //
 // FIX: Status matching is now case/whitespace-insensitive via
 // normalizeStatusValue(), so a value like "In process" or " settled " still
@@ -963,7 +962,11 @@ const getClaimFinancialAmount = (row, status) => {
     return Number(row['Claim Approved']) || 0;
   }
 
-  if (status === 'In Process' || status === 'Under Query') {
+  if (status === 'In Process') {
+    return Number(row['Claim Approved']) || 0;
+  }
+
+  if (status === 'Under Query') {
     return Number(row['Claim Submitted']) || 0;
   }
 
@@ -1072,6 +1075,9 @@ const calculateSIUtilization = (rows) => {
 // Healthysure-format Excel file. This function just reads those two columns
 // back out of whatever file gets uploaded for insights, and averages
 // whichever rows actually have a manually-entered numeric value.
+// The exported workbook uses the longer display headers from
+// COLUMN_HEADER_LABELS, so accept both the internal keys and those headers
+// when a workbook is read back with XLSX.
 // ============================================================================
 const isFilledNumber = (v) => v !== '' && v !== undefined && v !== null && !isNaN(Number(v));
 
@@ -1080,10 +1086,16 @@ const calculateReimbTAT = (rows) => {
   const ldrToSettlementValues = [];
 
   rows.forEach(row => {
-    const v1 = row['Discharge to LDR'];
+    const plainV1 = row['Discharge to LDR'];
+    const v1 = isFilledNumber(plainV1)
+      ? plainV1
+      : row[COLUMN_HEADER_LABELS['Discharge to LDR']];
     if (isFilledNumber(v1)) dischargeToLDRValues.push(Number(v1));
 
-    const v2 = row['LDR to Settlement'];
+    const plainV2 = row['LDR to Settlement'];
+    const v2 = isFilledNumber(plainV2)
+      ? plainV2
+      : row[COLUMN_HEADER_LABELS['LDR to Settlement']];
     if (isFilledNumber(v2)) ldrToSettlementValues.push(Number(v2));
   });
 
@@ -1464,7 +1476,7 @@ const MISConverterTool = () => {
       "DISEASE_CATEGORY": "Disease Category",
       "HOSPITAL_NAME": "Hospital Name",
       "CLAIMED_AMOUNT": "Claim Submitted",
-      "PAID_AMT": "Claim Approved",
+      "INCURRED_AMT": "Claim Approved",
       "NOT_PAYBLE_AMOUNT": "Deduction Amt",
       "DISCOUNT_AMOUNT": "Hospital Discount",
       "SUM_INSURED": "Sum Insured",
